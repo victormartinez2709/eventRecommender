@@ -1,0 +1,11 @@
+# Pinned loosely on purpose: these are all stable, widely-used libraries.
+requests>=2.31          # HTTP client for the Bandsintown API and the city pages
+beautifulsoup4>=4.12    # HTML parsing (we only use it to find <script> tags)
+lxml>=5.0               # fast parser backend for BeautifulSoup
+python-dotenv>=1.0      # loads your API key from .env so it never touches the code
+pandas>=2.2             # dataframes, for analysis later
+pyarrow>=15.0           # lets pandas write Parquet files
+tqdm>=4.66              # progress bars, so a 3-hour crawl isn't a black box
+timezonefinder>=6.5     # turns venue lat/lon into a timezone (fixes the datetime trap)
+networkx>=3.2           # graph analysis, for the co-billing network
+matplotlib>=3.8         # plots

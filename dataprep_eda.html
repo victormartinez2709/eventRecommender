@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataPrep_EDA &middot; Live Electronic Music Discovery in Colorado</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="header-inner">
+    <h1 class="site-title">Live Electronic Music Discovery in Colorado</h1>
+    <p class="site-sub">CSCI 5612 &middot; Machine Learning &middot; Project Website &middot; V&iacute;ctor Mart&iacute;nez Gil</p>
+  </div>
+  <nav class="tabs">
+    <a href="index.html">Introduction</a>
+    <a href="dataprep_eda.html" class="active">DataPrep_EDA</a>
+    <a href="clustering.html">Clustering</a>
+    <a href="pca.html">PCA</a>
+    <a href="naivebayes.html">NaiveBayes</a>
+    <a href="dectrees.html">DecTrees</a>
+    <a href="svms.html">SVMs</a>
+    <a href="regression.html">Regression</a>
+    <a href="nn.html">NN</a>
+    <a href="conclusions.html">Conclusions</a>
+    <a href="about.html">About Me</a>
+  </nav>
+</header>
+
+<main>
+<h1>Data Preparation and Exploratory Data Analysis</h1>
+<p class="lede">Where the data comes from, how it was gathered and cleaned, and what it looks like.</p>
+
+<h2>How, Where, and Why the Data Was Gathered</h2>
+
+<p>
+This project studies artists performing electronic music in Colorado. Two independent
+sources were combined: Bandsintown, a live-music platform, for the artists appearing on
+Colorado electronic listings and their audience figures; and MusicBrainz, an open music
+encyclopaedia, for genre classification and geographic origin. Neither source alone is
+sufficient, and their disagreements are informative in their own right.
+</p>
+
+<h2>Source One: Bandsintown</h2>
+
+<p>
+Base URL: <code>https://rest.bandsintown.com</code> &middot;
+<a href="https://help.artists.bandsintown.com/en/articles/9186477-api-documentation">API documentation</a>
+&middot; Authentication: a single <code>app_id</code> query parameter issued through a
+Bandsintown for Artists account.
+</p>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Endpoint</th><th>Returns</th><th>Status in this project</th></tr>
+  <tr><td><code>GET /artists/{artistname}</code></td>
+      <td>Artist profile: identifier, name, MusicBrainz id, follower count, upcoming event count, platform links</td>
+      <td>Works; the backbone of the dataset</td></tr>
+  <tr><td><code>GET /artists/id_{artist_id}</code></td>
+      <td>The same profile, addressed by numeric identifier</td>
+      <td>Works; used for all collection</td></tr>
+  <tr><td><code>GET /artists/{artistname}/events</code></td>
+      <td>Event list with venue, date and full lineup</td>
+      <td><strong>Restricted</strong> &mdash; see below</td></tr>
+</table>
+</div>
+
+<h3>Example GET request</h3>
+
+<pre><code>GET https://rest.bandsintown.com/artists/id_15559410?app_id=APP_ID
+
+Response (abbreviated):
+{
+  "id": "15559410",
+  "name": "MGNA Crrrta",
+  "mbid": "",
+  "tracker_count": 8821,
+  "upcoming_event_count": 32,
+  "image_url": "https://photos.bandsintown.com/large/...jpeg",
+  "links": [
+    { "type": "spotify", "url": "https://open.spotify.com/artist/..." }
+  ]
+}</code></pre>
+
+<h3>A documented limitation of this source</h3>
+
+<div class="note">
+  <strong>The events endpoint returns no data for artists other than the key holder.</strong>
+  Requests return HTTP 200 with an empty array for every artist tested, including artists
+  whose own profile response reports upcoming events. This was verified systematically
+  across 24 request variants: three artists with 32, 20 and 6 upcoming events respectively,
+  each addressed by name and by numeric identifier, with the date parameter set to
+  <code>all</code>, <code>upcoming</code>, <code>past</code>, an explicit range and omitted
+  entirely, with and without a trailing slash. Every combination returned an empty list.
+  Bandsintown's terms state that an artist key is linked to a single artist unless
+  otherwise authorised, which is consistent with this behaviour.
+</div>
+
+<p>
+The consequence is that this project has no event, venue or performance-lineup data, and
+the analysis is therefore at the level of the artist rather than the concert. Access for
+research purposes has been requested from the platform.
+</p>
+
+<h3>Identifying which artists to collect</h3>
+
+<p>
+The API provides no search or enumeration capability: it returns data about an artist
+whose identifier is already known, but cannot answer the question "which electronic
+artists play in Colorado". Artists were therefore identified from the platform's public
+city and genre listing pages, which embed structured schema.org event data including a
+link to each performing artist's page:
+</p>
+
+<pre><code>https://www.bandsintown.com/c/{city}/{date-range}/genre/electronic</code></pre>
+
+<p>
+Twenty-four Colorado cities were examined across every available date window, from Fort
+Collins through the Front Range to Colorado Springs and out to the mountain towns. A
+notable finding is that every city and every date range returned an identical set of
+artists, indicating that the platform serves a single Denver-region feed for this genre
+rather than city-specific listings. The resulting list of 126 artists is therefore close
+to the complete public listing surface for electronic music in this market, not a sample
+truncated early.
+</p>
+
+<h2>Source Two: MusicBrainz</h2>
+
+<p>
+Base URL: <code>https://musicbrainz.org/ws/2</code> &middot;
+<a href="https://musicbrainz.org/doc/MusicBrainz_API">API documentation</a> &middot;
+No authentication required; data is released under open licences. Requests are rate
+limited to one per second as the service requires.
+</p>
+
+<pre><code>GET https://musicbrainz.org/ws/2/artist/{mbid}?inc=tags+genres&amp;fmt=json
+GET https://musicbrainz.org/ws/2/artist?query=area:"Colorado"&amp;limit=100&amp;fmt=json</code></pre>
+
+<p>
+MusicBrainz supplies what Bandsintown does not: genre classification, artist type,
+formation year, and an <code>area</code> field giving geographic origin. It was used two
+ways. First, to enrich every artist already collected. Second, and more importantly, to
+search directly for artists whose recorded area lies in Colorado &mdash; an independent
+sample that does not derive from the first source at all, and which therefore provides a
+genuine second view of the same population rather than an annotation of the first.
+</p>
+
+<h2>Raw Data</h2>
+
+<p>
+Every API response is written to disk exactly as received, before any parsing, as
+compressed newline-delimited JSON. Each stored record carries the request URL with
+credentials removed, the retrieval timestamp, the HTTP status and the untouched response
+body. This makes every table below reproducible from the original bytes, and means a
+parsing correction requires re-reading rather than re-collecting. That property was used
+in practice during this project: when a loading fault was found, all 126 artist records
+were rebuilt from stored responses without a single additional API call.
+</p>
+
+<figure>
+  <img src="assets/figures/raw_sample.png" alt="Raw JSON as returned by the API">
+  <figcaption>
+    <strong>Figure 2. Raw data as retrieved.</strong> A single stored artist record showing
+    the nested structure returned by the interface, including an empty string where a
+    MusicBrainz identifier is absent.
+    Empty strings rather than nulls, nested link arrays and string-encoded numbers are all
+    visible here, and each is resolved during cleaning.
+  </figcaption>
+</figure>
+
+<p><a href="https://github.com/victormartinez2709/eventRecommender/tree/main/raw/sample">Link to the raw data</a></p>
+
+<h2>Cleaned Data</h2>
+
+<figure>
+  <img src="assets/figures/clean_sample.png" alt="The same data after cleaning">
+  <figcaption>
+    <strong>Figure 3. The same data after cleaning.</strong> The nested responses have been
+    flattened into typed relational tables and joined to MusicBrainz, with the matching
+    method retained as a column.
+    Every row is now directly usable for analysis, and the provenance of each match remains
+    visible rather than being discarded.
+  </figcaption>
+</figure>
+
+<p><a href="https://github.com/victormartinez2709/eventRecommender/tree/main/data/sample">Link to the cleaned data</a> &mdash;
+exported as CSV: artists, follower snapshots, MusicBrainz records, genre tags, and the
+Colorado sample.</p>
+
+<h2>Cleaning and Preparation Steps</h2>
+
+<h3>Absent values arrive as empty strings, not nulls</h3>
+<p>
+Bandsintown returns <code>""</code> rather than <code>null</code> for a missing MusicBrainz
+identifier. Because an empty string is not null, it passed through a merge intended to
+preserve existing values and would have overwritten valid identifiers with blanks. Empty
+strings are now converted to nulls on load, and completeness is measured on that basis.
+</p>
+
+<h3>Linking two sources without a shared key</h3>
+<p>
+Only a minority of artists carry the MusicBrainz identifier that would join the sources
+exactly. The remainder are matched by name search, accepting the highest-scoring candidate
+only when its score reaches 90. Both the method and the score are stored with every row,
+so fuzzy matches can be excluded from any analysis that requires certainty. Figure 6
+reports this split rather than presenting a single combined coverage figure, because the
+two groups do not carry equal confidence.
+</p>
+
+<h3>Geographic queries return other states</h3>
+<p>
+An unquoted multi-word area search tokenises: <code>area:Fort Collins</code> initially
+returned 2,012 results by matching "Collins" anywhere. Quoting the value reduced this to
+200. Even quoted, searches return towns of the same name in other states, so each returned
+artist is verified against a list of Colorado places and rejected if a competing state is
+named, which correctly separates Denver, Colorado from Denver, Pennsylvania. Rejected rows
+are retained with a flag rather than deleted, so the filtering is auditable. Figure 11
+shows the precision of each query: 80% of results were genuine.
+</p>
+
+<h3>Duplicates and repeated collection</h3>
+<p>
+Artists appear on multiple listing pages and are identified by numeric identifier rather
+than by name, so duplicates are removed on insertion. Follower counts are stored as an
+append-only series keyed by observation time rather than overwritten, so that repeated
+collection accumulates history instead of discarding it.
+</p>
+
+<h2>Exploratory Visualizations</h2>
+
+<figure>
+  <img src="assets/figures/fig01_follower_distribution.png" alt="Distribution of artist following">
+  <figcaption><strong>Figure 2. Distribution of artist following.</strong> Number of Bandsintown followers per artist, on a logarithmic horizontal axis. The range spans roughly five orders of magnitude, confirming that the sample captures both small local acts and major touring artists rather than one end of the market.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig02_top_artists.png" alt="The most-followed artists">
+  <figcaption><strong>Figure 3. The most-followed artists.</strong> The twenty artists with the largest followings among those playing Colorado electronic events. A handful of international names dominate the top of the distribution, which is why a logarithmic scale is needed for the smaller artists to remain visible at all.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig03_upcoming_events.png" alt="Announced activity per artist">
+  <figcaption><strong>Figure 4. Announced activity per artist.</strong> How many upcoming events each artist currently has listed. A large share of artists have none announced at any given moment, reflecting how short announcement windows are in this part of the live music market.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig04_followers_vs_events.png" alt="Audience size against announced activity">
+  <figcaption><strong>Figure 5. Audience size against announced activity.</strong> Each artist plotted by following and by number of upcoming events, both on logarithmic axes. The relationship is weak, indicating that how busy an artist is cannot be predicted from how large their audience is: small artists often have more dates listed than large ones.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig05_match_method.png" alt="How each artist was linked to MusicBrainz">
+  <figcaption><strong>Figure 6. How each artist was linked to MusicBrainz.</strong> Artists split by how their MusicBrainz record was located: an exact identifier supplied by Bandsintown, a scored name search, or no match at all. The fuzzy-matched group carries real risk of error, so it is reported separately rather than folded into a single coverage figure.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig06_field_completeness.png" alt="Field completeness across both sources">
+  <figcaption><strong>Figure 7. Field completeness across both sources.</strong> The percentage of artists holding a usable value in each field, across both data sources. Identity and popularity fields are essentially complete, while optional platform links and MusicBrainz identifiers are sparse, which determined which fields could be relied on.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig07_top_genres.png" alt="Most common genres">
+  <figcaption><strong>Figure 8. Most common genres.</strong> The twenty most frequent MusicBrainz genre labels across the collected artists. Electronic dominates as expected, and the subgenres beneath it (dubstep, house, techno, deep house, UK garage, melodic techno) reveal the stylistic spread that a single &ldquo;electronic&rdquo; category conceals.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig08_genres_per_artist.png" alt="Genre labels per artist">
+  <figcaption><strong>Figure 9. Genre labels per artist.</strong> How many distinct genre labels each artist carries in MusicBrainz. Most carry only a handful, so genre alone is a coarse description of any single artist and is better treated as a weak signal than a definitive label.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig09_artist_geography.png" alt="Where the artists are from">
+  <figcaption><strong>Figure 10. Where the artists are from.</strong> The fifteen most common areas of origin among the collected artists, according to MusicBrainz. A substantial share are recorded only at country level rather than city level, which limits how precisely artists can be placed geographically.</figcaption>
+</figure>
+<figure>
+  <img src="assets/figures/fig10_colorado_precision.png" alt="Precision of each geographic query">
+  <figcaption><strong>Figure 11. Precision of each geographic query.</strong> For each MusicBrainz area search, the split between artists genuinely located in Colorado and results returned in error. Roughly one result in five names a similarly-titled place in another state, which is why every row carries an explicit verification flag rather than being trusted as returned.</figcaption>
+</figure>
+
+<h2>Code</h2>
+
+<p>
+All collection, cleaning and figure code is written in Python. The core packages are
+<code>requests</code> for retrieval, <code>sqlite3</code> for storage,
+<code>beautifulsoup4</code> for parsing structured data out of listing pages, and
+<code>matplotlib</code> for figures.
+</p>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/tree/main/src">All code for this section</a></li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/bit_client.py">bit_client.py</a> &mdash; rate-limited API client with raw response capture</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/seed_names.py">seed_names.py</a> &mdash; resolves the artist list against the API</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/crawl.py">crawl.py</a> &mdash; collection loop</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/normalize.py">normalize.py</a> &mdash; converts raw responses into clean tables</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/enrich_musicbrainz.py">enrich_musicbrainz.py</a> &mdash; MusicBrainz enrichment and Colorado search</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/diagnose_events2.py">diagnose_events2.py</a> &mdash; the 24-variant test establishing the events restriction</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/make_figures.py">make_figures.py</a> &mdash; generates every figure on this page</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/export_data.py">export_data.py</a> &mdash; exports the CSV files linked above</li>
+</ul>
+
+</main>
+
+<footer class="site">
+  <div class="footer-inner">
+    CSCI 5612 Project Website &middot; University of Colorado Boulder &middot;
+    <a href="https://github.com/victormartinez2709/eventRecommender">Source code and data on GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>

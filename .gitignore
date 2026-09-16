@@ -1,0 +1,22 @@
+#never commit
+.env
+
+# Data: the bulk is ignored, but a committed sample is required by the
+# assignment (the website must link to real raw and clean data).
+raw/*
+!raw/sample/
+data/*
+!data/sample/
+!data/.gitkeep
+
+exports/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Editor / OS
+.DS_Store
