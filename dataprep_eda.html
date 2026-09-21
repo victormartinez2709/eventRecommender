@@ -119,9 +119,9 @@ https://app.ticketmaster.com/discovery/v2/events.json?apikey=YOUR_KEY&amp;stateC
 <ul>
   <li><strong>Raw API responses.</strong> Every response is archived locally as
       gzipped JSON Lines, one file per collection date, under <code>raw/</code>.
-      The archives themselves are not published, because responses captured
-      before credential redaction was added carry the API key inside the
-      response <code>url</code> field. The two redacted samples below show the
+      The archives are kept out of the repository, because each
+      response echoes the request URL and that URL carries the API
+      credential. The two redacted samples below show the
       exact structure, and <code>exports/events_raw.csv</code> is the complete
       raw table with every field, unmodified.</li>
   <li><strong>One untouched event record</strong>, pretty-printed:
@@ -474,9 +474,10 @@ https://app.ticketmaster.com/discovery/v2/events.json?apikey=YOUR_KEY&amp;stateC
   Every collection therefore appends one row per event to an observation log,
   recording status, price, lineup size and distance from the event date at that
   moment. The log is append-only and cannot be backfilled, so it exists only for
-  the weeks collection actually ran. Its value is already visible: 69 events in
-  the database are no longer in the live feed and 51 have already taken place.
-  Those records exist only because they were captured.
+  the weeks collection actually ran. Its value is already visible. The most recent
+  collection returned 1,121 events while the database holds 1,190: the 69
+  difference are shows that have dropped out of the feed entirely, and they
+  exist now only because they were captured at the time.
 </p>
 
 <p>
