@@ -30,266 +30,528 @@
 
 <main>
 <h1>Data Preparation and Exploratory Data Analysis</h1>
-<p class="lede">Where the data comes from, how it was gathered and cleaned, and what it looks like.</p>
 
-<h2>How, Where, and Why the Data Was Gathered</h2>
-
-<p>
-This project studies artists performing electronic music in Colorado. Two independent
-sources were combined: Bandsintown, a live-music platform, for the artists appearing on
-Colorado electronic listings and their audience figures; and MusicBrainz, an open music
-encyclopaedia, for genre classification and geographic origin. Neither source alone is
-sufficient, and their disagreements are informative in their own right.
+<p class="lede">
+  Every live music event listed in Colorado for the coming year was collected
+  from the Ticketmaster Discovery API, archived, parsed into twelve relational
+  tables, cleaned against four defects found in the data itself, and verified by
+  twenty-seven automated checks. 1,190 raw listings became 1,020 distinct live
+  events at 68 venues, 152 of them electronic.
 </p>
 
-<h2>Source One: Bandsintown</h2>
+<h2>Why this data, and how it was chosen</h2>
 
 <p>
-Base URL: <code>https://rest.bandsintown.com</code> &middot;
-<a href="https://help.artists.bandsintown.com/en/articles/9186477-api-documentation">API documentation</a>
-&middot; Authentication: a single <code>app_id</code> query parameter issued through a
-Bandsintown for Artists account.
+  The topic requires a record of what is playing, where, and by whom. Three
+  properties matter: the data must cover a whole regional market rather than a
+  selection of it, it must identify the artists on each bill and not only the
+  event, and it must carry some notion of musical style. Artist identity is
+  essential because a bill is a curatorial judgment, and two artists sharing a
+  stage is the basic unit of evidence this project is built on.
 </p>
 
-<div class="table-wrap">
-<table>
-  <tr><th>Endpoint</th><th>Returns</th><th>Status in this project</th></tr>
-  <tr><td><code>GET /artists/{artistname}</code></td>
-      <td>Artist profile: identifier, name, MusicBrainz id, follower count, upcoming event count, platform links</td>
-      <td>Works; the backbone of the dataset</td></tr>
-  <tr><td><code>GET /artists/id_{artist_id}</code></td>
-      <td>The same profile, addressed by numeric identifier</td>
-      <td>Works; used for all collection</td></tr>
-  <tr><td><code>GET /artists/{artistname}/events</code></td>
-      <td>Event list with venue, date and full lineup</td>
-      <td><strong>Restricted</strong> &mdash; see below</td></tr>
-</table>
-</div>
-
-<h3>Example GET request</h3>
-
-<pre><code>GET https://rest.bandsintown.com/artists/id_15559410?app_id=APP_ID
-
-Response (abbreviated):
-{
-  "id": "15559410",
-  "name": "MGNA Crrrta",
-  "mbid": "",
-  "tracker_count": 8821,
-  "upcoming_event_count": 32,
-  "image_url": "https://photos.bandsintown.com/large/...jpeg",
-  "links": [
-    { "type": "spotify", "url": "https://open.spotify.com/artist/..." }
-  ]
-}</code></pre>
-
-<h3>A documented limitation of this source</h3>
-
-<div class="note">
-  <strong>The events endpoint returns no data for artists other than the key holder.</strong>
-  Requests return HTTP 200 with an empty array for every artist tested, including artists
-  whose own profile response reports upcoming events. This was verified systematically
-  across 24 request variants: three artists with 32, 20 and 6 upcoming events respectively,
-  each addressed by name and by numeric identifier, with the date parameter set to
-  <code>all</code>, <code>upcoming</code>, <code>past</code>, an explicit range and omitted
-  entirely, with and without a trailing slash. Every combination returned an empty list.
-  Bandsintown's terms state that an artist key is linked to a single artist unless
-  otherwise authorised, which is consistent with this behaviour.
-</div>
-
 <p>
-The consequence is that this project has no event, venue or performance-lineup data, and
-the analysis is therefore at the level of the artist rather than the concert. Access for
-research purposes has been requested from the platform.
+  Bandsintown was the first candidate, and it failed on access rather than on
+  content. An artist API key issued to a performing act returns events for that
+  one act only; twenty-four variations of the events endpoint were tested and
+  every one of them enforced the same restriction. A written request to
+  Bandsintown for broader research access for an academic thesis was declined.
+  That refusal is recorded here because it determined the shape of the project
+  rather than merely delaying it.
 </p>
 
-<h3>Identifying which artists to collect</h3>
-
 <p>
-The API provides no search or enumeration capability: it returns data about an artist
-whose identifier is already known, but cannot answer the question "which electronic
-artists play in Colorado". Artists were therefore identified from the platform's public
-city and genre listing pages, which embed structured schema.org event data including a
-link to each performing artist's page:
+  The <strong>Ticketmaster Discovery API</strong> was selected instead. It is
+  open, documented, returns events for an entire state without a per-artist
+  restriction, and attaches a three-level genre taxonomy
+  (<em>segment &rarr; genre &rarr; subgenre</em>) to both events and artists.
+  That taxonomy is the label this project depends on. The trade is coverage:
+  Ticketmaster sees events ticketed through its own platform, so venues selling
+  through other services or at the door are absent. That boundary is quantified
+  under <a href="#limits">limitations</a>.
 </p>
 
-<pre><code>https://www.bandsintown.com/c/{city}/{date-range}/genre/electronic</code></pre>
+<h2 id="api">The API</h2>
+
+<ul>
+  <li><strong>Provider:</strong>
+      <a href="https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/">Ticketmaster Discovery API v2</a></li>
+  <li><strong>Base URL:</strong> <code>https://app.ticketmaster.com/discovery/v2/</code></li>
+  <li><strong>Core endpoint used:</strong> <code>GET /discovery/v2/events.json</code></li>
+  <li><strong>Supporting endpoints:</strong> <code>/attractions</code> (artists),
+      <code>/venues</code>, <code>/classifications</code> (the genre taxonomy)</li>
+  <li><strong>Authentication:</strong> an API key passed as the
+      <code>apikey</code> query parameter. The key is stored in a local
+      <code>.env</code> file, is never committed, and is stripped from every
+      archived response before it is written to disk.</li>
+  <li><strong>Limits:</strong> 5,000 requests per day, five per second, and a
+      hard paging cap where <em>page &times; size</em> must stay below 1,000.</li>
+</ul>
 
 <p>
-Twenty-four Colorado cities were examined across every available date window, from Fort
-Collins through the Front Range to Colorado Springs and out to the mountain towns. A
-notable finding is that every city and every date range returned an identical set of
-artists, indicating that the platform serves a single Denver-region feed for this genre
-rather than city-specific listings. The resulting list of 126 artists is therefore close
-to the complete public listing surface for electronic music in this market, not a sample
-truncated early.
+  A complete request of the kind this project issues, retrieving every music
+  event in Colorado during October 2026:
 </p>
 
-<h2>Source Two: MusicBrainz</h2>
+<p><code>
+https://app.ticketmaster.com/discovery/v2/events.json?apikey=YOUR_KEY&amp;stateCode=CO&amp;segmentId=KZFzniwnSyZfZ7v7nJ&amp;startDateTime=2026-10-01T00:00:00Z&amp;endDateTime=2026-10-31T23:59:59Z&amp;size=200&amp;page=0&amp;sort=date,asc
+</code></p>
 
 <p>
-Base URL: <code>https://musicbrainz.org/ws/2</code> &middot;
-<a href="https://musicbrainz.org/doc/MusicBrainz_API">API documentation</a> &middot;
-No authentication required; data is released under open licences. Requests are rate
-limited to one per second as the service requires.
+  <code>segmentId=KZFzniwnSyZfZ7v7nJ</code> is Ticketmaster's identifier for the
+  Music segment, and <code>KnvZfZ7vAvF</code> is the Dance/Electronic genre
+  within it. The genre filter is deliberately <em>not</em> applied at
+  collection: all Colorado music is retrieved and the electronic subset is
+  identified afterwards, because a recommender needs to know what a listener
+  did not choose as well as what they did, and because a venue's genre mix is
+  only meaningful when the whole mix is visible.
 </p>
 
-<pre><code>GET https://musicbrainz.org/ws/2/artist/{mbid}?inc=tags+genres&amp;fmt=json
-GET https://musicbrainz.org/ws/2/artist?query=area:"Colorado"&amp;limit=100&amp;fmt=json</code></pre>
+<h2 id="data">The data</h2>
 
 <p>
-MusicBrainz supplies what Bandsintown does not: genre classification, artist type,
-formation year, and an <code>area</code> field giving geographic origin. It was used two
-ways. First, to enrich every artist already collected. Second, and more importantly, to
-search directly for artists whose recorded area lies in Colorado &mdash; an independent
-sample that does not derive from the first source at all, and which therefore provides a
-genuine second view of the same population rather than an annotation of the first.
-</p>
-
-<h2>Raw Data</h2>
-
-<p>
-Every API response is written to disk exactly as received, before any parsing, as
-compressed newline-delimited JSON. Each stored record carries the request URL with
-credentials removed, the retrieval timestamp, the HTTP status and the untouched response
-body. This makes every table below reproducible from the original bytes, and means a
-parsing correction requires re-reading rather than re-collecting. That property was used
-in practice during this project: when a loading fault was found, all 126 artist records
-were rebuilt from stored responses without a single additional API call.
-</p>
-
-<figure>
-  <img src="assets/figures/raw_sample.png" alt="Raw JSON as returned by the API">
-  <figcaption>
-    <strong>Figure 2. Raw data as retrieved.</strong> A single stored artist record showing
-    the nested structure returned by the interface, including an empty string where a
-    MusicBrainz identifier is absent.
-    Empty strings rather than nulls, nested link arrays and string-encoded numbers are all
-    visible here, and each is resolved during cleaning.
-  </figcaption>
-</figure>
-
-<p><a href="https://github.com/victormartinez2709/eventRecommender/tree/main/raw/sample">Link to the raw data</a></p>
-
-<h2>Cleaned Data</h2>
-
-<figure>
-  <img src="assets/figures/clean_sample.png" alt="The same data after cleaning">
-  <figcaption>
-    <strong>Figure 3. The same data after cleaning.</strong> The nested responses have been
-    flattened into typed relational tables and joined to MusicBrainz, with the matching
-    method retained as a column.
-    Every row is now directly usable for analysis, and the provenance of each match remains
-    visible rather than being discarded.
-  </figcaption>
-</figure>
-
-<p><a href="https://github.com/victormartinez2709/eventRecommender/tree/main/data/sample">Link to the cleaned data</a> &mdash;
-exported as CSV: artists, follower snapshots, MusicBrainz records, genre tags, and the
-Colorado sample.</p>
-
-<h2>Cleaning and Preparation Steps</h2>
-
-<h3>Absent values arrive as empty strings, not nulls</h3>
-<p>
-Bandsintown returns <code>""</code> rather than <code>null</code> for a missing MusicBrainz
-identifier. Because an empty string is not null, it passed through a merge intended to
-preserve existing values and would have overwritten valid identifiers with blanks. Empty
-strings are now converted to nulls on load, and completeness is measured on that basis.
-</p>
-
-<h3>Linking two sources without a shared key</h3>
-<p>
-Only a minority of artists carry the MusicBrainz identifier that would join the sources
-exactly. The remainder are matched by name search, accepting the highest-scoring candidate
-only when its score reaches 90. Both the method and the score are stored with every row,
-so fuzzy matches can be excluded from any analysis that requires certainty. Figure 6
-reports this split rather than presenting a single combined coverage figure, because the
-two groups do not carry equal confidence.
-</p>
-
-<h3>Geographic queries return other states</h3>
-<p>
-An unquoted multi-word area search tokenises: <code>area:Fort Collins</code> initially
-returned 2,012 results by matching "Collins" anywhere. Quoting the value reduced this to
-200. Even quoted, searches return towns of the same name in other states, so each returned
-artist is verified against a list of Colorado places and rejected if a competing state is
-named, which correctly separates Denver, Colorado from Denver, Pennsylvania. Rejected rows
-are retained with a flag rather than deleted, so the filtering is auditable. Figure 11
-shows the precision of each query: 80% of results were genuine.
-</p>
-
-<h3>Duplicates and repeated collection</h3>
-<p>
-Artists appear on multiple listing pages and are identified by numeric identifier rather
-than by name, so duplicates are removed on insertion. Follower counts are stored as an
-append-only series keyed by observation time rather than overwritten, so that repeated
-collection accumulates history instead of discarding it.
-</p>
-
-<h2>Exploratory Visualizations</h2>
-
-<figure>
-  <img src="assets/figures/fig01_follower_distribution.png" alt="Distribution of artist following">
-  <figcaption><strong>Figure 2. Distribution of artist following.</strong> Number of Bandsintown followers per artist, on a logarithmic horizontal axis. The range spans roughly five orders of magnitude, confirming that the sample captures both small local acts and major touring artists rather than one end of the market.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig02_top_artists.png" alt="The most-followed artists">
-  <figcaption><strong>Figure 3. The most-followed artists.</strong> The twenty artists with the largest followings among those playing Colorado electronic events. A handful of international names dominate the top of the distribution, which is why a logarithmic scale is needed for the smaller artists to remain visible at all.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig03_upcoming_events.png" alt="Announced activity per artist">
-  <figcaption><strong>Figure 4. Announced activity per artist.</strong> How many upcoming events each artist currently has listed. A large share of artists have none announced at any given moment, reflecting how short announcement windows are in this part of the live music market.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig04_followers_vs_events.png" alt="Audience size against announced activity">
-  <figcaption><strong>Figure 5. Audience size against announced activity.</strong> Each artist plotted by following and by number of upcoming events, both on logarithmic axes. The relationship is weak, indicating that how busy an artist is cannot be predicted from how large their audience is: small artists often have more dates listed than large ones.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig05_match_method.png" alt="How each artist was linked to MusicBrainz">
-  <figcaption><strong>Figure 6. How each artist was linked to MusicBrainz.</strong> Artists split by how their MusicBrainz record was located: an exact identifier supplied by Bandsintown, a scored name search, or no match at all. The fuzzy-matched group carries real risk of error, so it is reported separately rather than folded into a single coverage figure.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig06_field_completeness.png" alt="Field completeness across both sources">
-  <figcaption><strong>Figure 7. Field completeness across both sources.</strong> The percentage of artists holding a usable value in each field, across both data sources. Identity and popularity fields are essentially complete, while optional platform links and MusicBrainz identifiers are sparse, which determined which fields could be relied on.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig07_top_genres.png" alt="Most common genres">
-  <figcaption><strong>Figure 8. Most common genres.</strong> The twenty most frequent MusicBrainz genre labels across the collected artists. Electronic dominates as expected, and the subgenres beneath it (dubstep, house, techno, deep house, UK garage, melodic techno) reveal the stylistic spread that a single &ldquo;electronic&rdquo; category conceals.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig08_genres_per_artist.png" alt="Genre labels per artist">
-  <figcaption><strong>Figure 9. Genre labels per artist.</strong> How many distinct genre labels each artist carries in MusicBrainz. Most carry only a handful, so genre alone is a coarse description of any single artist and is better treated as a weak signal than a definitive label.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig09_artist_geography.png" alt="Where the artists are from">
-  <figcaption><strong>Figure 10. Where the artists are from.</strong> The fifteen most common areas of origin among the collected artists, according to MusicBrainz. A substantial share are recorded only at country level rather than city level, which limits how precisely artists can be placed geographically.</figcaption>
-</figure>
-<figure>
-  <img src="assets/figures/fig10_colorado_precision.png" alt="Precision of each geographic query">
-  <figcaption><strong>Figure 11. Precision of each geographic query.</strong> For each MusicBrainz area search, the split between artists genuinely located in Colorado and results returned in error. Roughly one result in five names a similarly-titled place in another state, which is why every row carries an explicit verification flag rather than being trusted as returned.</figcaption>
-</figure>
-
-<h2>Code</h2>
-
-<p>
-All collection, cleaning and figure code is written in Python. The core packages are
-<code>requests</code> for retrieval, <code>sqlite3</code> for storage,
-<code>beautifulsoup4</code> for parsing structured data out of listing pages, and
-<code>matplotlib</code> for figures.
+  Raw responses are archived exactly as returned, before any parsing. Nothing in
+  the pipeline re-queries the API to correct a parsing error; a parser bug is
+  fixed by re-running the parser over the archive. This was relied on twice
+  while the schema was still changing.
 </p>
 
 <ul>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/tree/main/src">All code for this section</a></li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/bit_client.py">bit_client.py</a> &mdash; rate-limited API client with raw response capture</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/seed_names.py">seed_names.py</a> &mdash; resolves the artist list against the API</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/crawl.py">crawl.py</a> &mdash; collection loop</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/normalize.py">normalize.py</a> &mdash; converts raw responses into clean tables</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/enrich_musicbrainz.py">enrich_musicbrainz.py</a> &mdash; MusicBrainz enrichment and Colorado search</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/diagnose_events2.py">diagnose_events2.py</a> &mdash; the 24-variant test establishing the events restriction</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/make_figures.py">make_figures.py</a> &mdash; generates every figure on this page</li>
-  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/export_data.py">export_data.py</a> &mdash; exports the CSV files linked above</li>
+  <li><strong>Raw API responses.</strong> Every response is archived locally as
+      gzipped JSON Lines, one file per collection date, under <code>raw/</code>.
+      The archives themselves are not published, because responses captured
+      before credential redaction was added carry the API key inside the
+      response <code>url</code> field. The two redacted samples below show the
+      exact structure, and <code>exports/events_raw.csv</code> is the complete
+      raw table with every field, unmodified.</li>
+  <li><strong>One untouched event record</strong>, pretty-printed:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/raw/sample/ticketmaster_event_sample.json">raw/sample/ticketmaster_event_sample.json</a></li>
+  <li><strong>One complete response envelope</strong>, showing paging metadata:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/raw/sample/ticketmaster_response_sample.json">raw/sample/ticketmaster_response_sample.json</a></li>
+  <li><strong>Parsed raw events</strong>, before cleaning:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/events_raw.csv">exports/events_raw.csv</a></li>
+  <li><strong>Cleaned events</strong>:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/events_clean.csv">exports/events_clean.csv</a></li>
+  <li><strong>Venues</strong>:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/venues.csv">exports/venues.csv</a>
+      &middot; <strong>Artists</strong>:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/attractions.csv">exports/attractions.csv</a>
+      &middot; <strong>Lineups</strong>:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/event_attractions.csv">exports/event_attractions.csv</a></li>
+  <li><strong>Genre taxonomy</strong>:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/classifications.csv">exports/classifications.csv</a>
+      &middot; <strong>Weekly observations</strong>:
+      <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/event_observations.csv">exports/event_observations.csv</a></li>
 </ul>
+
+<h2>Collection</h2>
+
+<p>
+  Three obstacles had to be handled before any row was stored.
+</p>
+
+<p>
+  <strong>The paging cap.</strong> Ticketmaster refuses any request where
+  <em>page &times; size</em> reaches 1,000, so a query matching more than a
+  thousand events cannot be read to the end. The collector requests one month at
+  a time; if a month still reports more than a thousand results it is split in
+  half and the halves are requested separately, recursively, down to single
+  days if necessary. Every slice is written to a collection log with a flag
+  recording whether it was truncated, so silent loss becomes visible.
+</p>
+
+<p>
+  <strong>Quota.</strong> The client throttles itself below five requests per
+  second and tracks remaining daily quota, raising an explicit error rather than
+  failing quietly. A full twelve-month collection of Colorado costs
+  <strong>16 requests</strong> of the 5,000 available.
+</p>
+
+<p>
+  <strong>Repetition.</strong> Development means running the same collection
+  repeatedly. Responses are cached locally with a lifetime chosen by how far
+  ahead the query reaches: a window entirely in the past cannot gain events and
+  is held ninety days; the next sixty days change daily and are held twelve
+  hours; anything further ahead is held three days. The second run of a
+  completed collection costs <strong>zero API requests</strong>.
+</p>
+
+<h2>From responses to tables</h2>
+
+<p>
+  The parser writes to twelve tables &mdash; events, venues, artists, the lineup
+  linking them, all classifications, the genre taxonomy, a collection log, the
+  response cache, an observation log, the cleaned output, and a record of each
+  run. It makes no network calls, which is what makes every cleaning decision
+  below cheap to revise.
+</p>
+
+<p>
+  The current database holds <strong>1,190 events</strong>,
+  <strong>81 venue records</strong>, <strong>1,237 artists</strong>,
+  <strong>1,799 lineup rows</strong>, <strong>5,037 external artist links</strong>
+  and <strong>1,095 taxonomy rows</strong>, covering September 2026 to
+  September 2027.
+</p>
+
+<h2>Before and after</h2>
+
+<figure>
+  <img src="assets/figures/raw_sample.png" alt="Table of raw event rows showing placeholder genre values, a missing price, a ticket tier listed as the first artist, and one concert listed twice">
+  <figcaption>
+    <strong>Figure 1. Raw data as the API returns it.</strong> These rows were
+    selected because they carry the defects described below: a placeholder
+    string stored where a genre is missing, an empty price, a ticket tier
+    ("Club Seating") listed ahead of the actual performer, and one concert
+    appearing twice under two identifiers with slightly different titles. No
+    value in this table has been altered.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/clean_sample.png" alt="The same event rows after cleaning, with placeholder genres replaced by NULL, real headliners identified, and the repeated concert flagged as a duplicate">
+  <figcaption>
+    <strong>Figure 2. The same events after cleaning.</strong> Placeholder
+    genres have become real nulls, the ticket tier no longer appears as the
+    headlining act, and the repeated concert is flagged in the duplicate column
+    rather than deleted. Flagging instead of deleting keeps every decision
+    reversible and auditable.
+  </figcaption>
+</figure>
+
+<h2 id="cleaning">Cleaning</h2>
+
+<p>
+  Four defects appear in this data. Each was found by inspecting output rather
+  than anticipated in advance, and each is handled in a stage that writes to a
+  separate table, so the parsed raw data is never overwritten.
+</p>
+
+<p>
+  <strong>1. Missing values stored as text.</strong> Ticketmaster writes the
+  strings <em>"Undefined"</em> and <em>"None"</em> into genre and subgenre rather
+  than leaving them empty. Left untreated they appear as legitimate genre
+  categories in every chart on this page. They are converted to true nulls,
+  along with <em>"N/A"</em>, <em>"Unknown"</em> and the empty string.
+</p>
+
+<p>
+  <strong>2. One building listed under several identifiers.</strong> "Meow Wolf
+  Denver" and "Meow Wolf&nbsp; Denver Convergence Station" are one address
+  hosting one set of shows. More surprisingly, Ticketmaster also issues multiple
+  records with <em>identical</em> names: Red Rocks Amphitheatre, Bellco Theatre
+  and Pikes Peak Center each appear twice, and Black Sheep three times. Because
+  duplicate detection keys on the venue, two identifiers for one building make
+  duplicates structurally undetectable. Venue records in the same city are
+  merged when one name is a word-boundary prefix of the other, joining
+  <strong>12 families</strong> and reducing 81 venue records to
+  <strong>68 real buildings</strong>. The prefix test is deliberately strict:
+  "Club Vinyl", "The Basement at Club Vinyl" and "The Rooftop at Vinyl" are
+  three genuinely separate rooms and remain separate.
+</p>
+
+<p>
+  <strong>3. Ticket tiers listed as performers.</strong> Twenty-eight listings
+  carry an "artist" named <em>Club Seating: Paramount Theatre</em>, which sorts
+  ahead of the real act. The headlining artist, and therefore the duplicate key,
+  came out wrong on every one of them. Entries whose names begin with a ticket
+  or venue-service phrase are removed from the lineup before the headliner is
+  selected, which also corrects the artist count on those events.
+</p>
+
+<p>
+  <strong>4. The same concert listed more than once.</strong> Ticketmaster issues
+  separate identifiers for what an attendee would call one show: different
+  ticket tiers, re-listings after a reschedule, or a promoter posting again with
+  a longer title. A show is identified by its canonical venue, its date and its
+  headlining artist; where no artist is attached, the event title is used with
+  promotional words removed. Listings whose identity is a word-boundary prefix
+  of another on the same night are merged, so "Broadway Rave" and "Broadway Rave
+  - The Musical Theatre Dance Party" resolve to one event. Within each group the
+  richest row survives &mdash; most artists, then a published price &mdash; and
+  the rest are flagged rather than deleted.
+</p>
+
+<figure>
+  <img src="assets/figures/fig08_cleaning_funnel.png" alt="Bar chart showing 1190 collected listings reduced to 1029 after duplicate removal and 1020 after cancellations">
+  <figcaption>
+    <strong>Figure 3. Cleaning removes one listing in seven.</strong> Of 1,190
+    collected listings, 161 duplicate another listing and a further 9 are
+    cancelled or postponed, leaving 1,020 live events. Before the duplicated
+    venue identifiers were merged only 77 duplicates were detectable, so roughly
+    half of them had been hidden behind a venue listed twice.
+  </figcaption>
+</figure>
+
+<h2>Missing, incorrect and extreme values</h2>
+
+<p>
+  Each incomplete field is handled explicitly rather than dropped or filled, and
+  the treatment differs because the reason for the absence differs.
+</p>
+
+<ul>
+  <li><strong>Placeholder genres</strong> (11 events) become null, so they are
+      counted as missing rather than as a category.</li>
+  <li><strong>Price</strong> is absent for 83% of events. It is retained in the
+      data but excluded as a model feature and never imputed, because the
+      missingness is not random: large ticketed concerts publish prices and
+      small club nights do not, so any imputed value would encode venue size
+      rather than cost.</li>
+  <li><strong>Artist lineup</strong> is absent for 17% of events, recorded as a
+      lineup size of zero rather than as a null, since "no artist credited" is a
+      real and informative state.</li>
+  <li><strong>Genre recorded as "Other"</strong> (277 events) is kept as its own
+      category rather than converted to missing, because Ticketmaster uses it as
+      a genuine bucket. The completeness figure below separates the field being
+      populated from the value being informative.</li>
+  <li><strong>Incorrect values</strong> are tested rather than assumed: no event
+      has a minimum price above its maximum, no negative prices occur, every
+      date parses as a valid calendar date, and no event goes on sale after it
+      takes place.</li>
+  <li><strong>Extreme values</strong> are inspected, not trimmed. On-sale lead
+      times beyond 400 days are excluded from the histogram below for
+      readability only; they remain in the dataset, because a show announced a
+      year ahead is a real phenomenon rather than an error.</li>
+</ul>
+
+<figure>
+  <img src="assets/figures/fig06_field_completeness.png" alt="Horizontal bar chart of field completeness, with price at 17 percent, promoter at 42 percent, and all other fields above 73 percent">
+  <figcaption>
+    <strong>Figure 4. Two fields are effectively missing.</strong> Date, venue,
+    start time and on-sale date are complete, and the genre field is populated on
+    99% of events. A quarter of those genre values say only "Other", so the chart
+    separates the field being set from the value being usable; price and
+    promoter are the two fields genuinely too sparse to rely on.
+  </figcaption>
+</figure>
+
+<h2>Labelling an event electronic</h2>
+
+<p>
+  The project needs to know which events are electronic, and the event's own
+  genre field is not sufficient. An event is treated as electronic when its
+  genre is Dance/Electronic, or its subgenre is one of a list of electronic
+  styles, or <em>any artist on the bill</em> is classified as Dance/Electronic.
+</p>
+
+<p>
+  The third rule carries a quarter of the label. Amelie Lens, Mild Minds and
+  Desert Dwellers all play Colorado dates that Ticketmaster files under
+  something other than Dance/Electronic; the artist record is correct where the
+  event record is not.
+</p>
+
+<figure>
+  <img src="assets/figures/fig05_electronic_detection.png" alt="Bar chart comparing 112 electronic events identified by event genre against 40 identified only through the lineup">
+  <figcaption>
+    <strong>Figure 5. A quarter of electronic events are invisible to the genre
+    field.</strong> Of 152 electronic events, 112 are labelled Dance/Electronic
+    by Ticketmaster and 40 are identified only because an artist on the bill is.
+    A model trained on the event genre alone would never see that second group.
+  </figcaption>
+</figure>
+
+<p>
+  Two deliberate exclusions are recorded. <em>Trap</em> is not treated as
+  electronic, because Ticketmaster files it under Hip-Hop/Rap far more often
+  than under Dance/Electronic, and including it drew rap bills into the
+  electronic set. The label also inherits errors from the source: a nu-metal
+  night and an Alter Bridge show are both classified as Dance/Electronic by
+  Ticketmaster itself. Two errors in 152 is approximately 98% precision, and the
+  error belongs to the source data rather than to the cleaning.
+</p>
+
+<h2>Verification</h2>
+
+<p>
+  Cleaning that is not checked is only a claim, so the pipeline ends with an
+  audit that re-derives the cleaning decisions independently and compares them
+  against what was stored. A rule that silently stops firing therefore fails a
+  check instead of producing a plausible number.
+</p>
+
+<p>
+  Twenty-seven checks cover coverage, referential integrity between all six
+  tables, duplicate-group collisions, venue records left unmerged, placeholder
+  strings surviving as genres, the electronic flag recomputed from scratch,
+  artist counts, date and price sanity, and observation coverage. The current
+  result is <strong>27 passed, 0 failures</strong>. The audit also gates
+  publication: when it fails, the upload to the hosted database does not run.
+</p>
+
+<h2>Exploratory analysis</h2>
+
+<figure>
+  <img src="assets/figures/fig01_events_per_month.png" alt="Bar chart of events per month, peaking at 389 in October 2026 and falling below 30 per month after January 2027">
+  <figcaption>
+    <strong>Figure 6. Listings thin out about four months ahead.</strong>
+    October 2026 holds 389 events while March 2027 holds fewer than twenty. This
+    is not seasonality, since Colorado does not stop holding concerts in spring;
+    it is announcement lead time, and it means the dataset cannot be grown by
+    querying further ahead, only by collecting repeatedly over time.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/fig09_lead_time.png" alt="Histogram of days between tickets going on sale and the event date, with a median of 129 days">
+  <figcaption>
+    <strong>Figure 7. Tickets go on sale a median of 129 days ahead.</strong>
+    Roughly four months, with a long tail reaching a full year. This is the
+    mechanism behind Figure 6 and it sets the natural collection cadence:
+    anything less frequent than weekly will miss announcements.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/fig02_events_by_weekday.png" alt="Bar chart of events by day of week, with Friday at 233 and Saturday at 262, together 49 percent of all events">
+  <figcaption>
+    <strong>Figure 8. Half of all events fall on Friday or Saturday.</strong>
+    The two weekend nights hold 49% of the calendar while Monday holds under 5%.
+    On a given Friday a listener in Denver faces a genuine choice among many
+    simultaneous events, which is exactly the situation in which recommendation
+    has value.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/fig03_top_venues.png" alt="Horizontal bar chart of the fifteen busiest venues, led by Marquis in Denver with 70 events">
+  <figcaption>
+    <strong>Figure 9. A small number of rooms carry most of the calendar.</strong>
+    Marquis in Denver leads with 70 events, followed by La Rumba and Boettcher
+    Hall. The distribution is strongly skewed, with a handful of venues
+    programming constantly and most appearing only a few times a year, which
+    makes venue a powerful but sparse predictor.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/fig04_genre_distribution.png" alt="Horizontal bar chart of genres, with Other at 277, Rock at 220 and Dance/Electronic at 112">
+  <figcaption>
+    <strong>Figure 10. Genre as Ticketmaster reports it.</strong> The largest
+    category is "Other" at 277 events, so 27% of the data carries no informative
+    genre, followed by Rock at 220 and Dance/Electronic at 112. Inspection of the
+    "Other" bucket shows it is mostly genuinely non-electronic, since its artists
+    are classified Rock, Folk, Country and Classical, though 32 of those events
+    were recovered as electronic through their lineups.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/fig07_lineup_size.png" alt="Bar chart of artists credited per event, with 462 events naming one artist and 178 naming none">
+  <figcaption>
+    <strong>Figure 11. Most events name one act, and 17% name none.</strong>
+    Events with no artist attached cannot enter the co-performance graph and
+    cannot be labelled through their lineup, so they depend entirely on the
+    event's own genre. Since Figure 10 shows that genre is often "Other", this
+    subset is where the dataset is weakest.
+  </figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/fig10_venue_genre_heatmap.png" alt="Heatmap of the twelve busiest venues against the eight most common genres, showing most venues concentrated in one or two genres">
+  <figcaption>
+    <strong>Figure 12. Venues specialise, with exceptions.</strong> La Rumba is
+    almost entirely World, Boettcher Hall is the Colorado Symphony filed under
+    "Other", and Marquis, Summit Music Hall and Black Sheep are predominantly
+    Rock, while Red Rocks Amphitheatre spreads across every genre as an
+    amphitheatre booking national tours would. These are the busiest venues
+    rather than the most electronic ones, since rooms such as Club Vinyl and The
+    Church programme electronic music almost exclusively but host fewer events
+    each year.
+  </figcaption>
+</figure>
+
+<h2>Building a record over time</h2>
+
+<p>
+  Ticketmaster is a live ticketing feed rather than an archive. Events disappear
+  once they go off sale, prices and status change while they are listed, and no
+  endpoint returns what an event looked like last month.
+</p>
+
+<p>
+  Every collection therefore appends one row per event to an observation log,
+  recording status, price, lineup size and distance from the event date at that
+  moment. The log is append-only and cannot be backfilled, so it exists only for
+  the weeks collection actually ran. Its value is already visible: 69 events in
+  the database are no longer in the live feed and 51 have already taken place.
+  Those records exist only because they were captured.
+</p>
+
+<p>
+  The pipeline runs weekly as a single scheduled command &mdash; collect, parse,
+  observe, clean, audit, publish. Over a year this converts a snapshot of 1,020
+  events into a longitudinal record of how a regional music calendar fills up.
+</p>
+
+<h2>Where the data is stored</h2>
+
+<p>
+  Working data is a local SQLite database. The cleaned result is published to a
+  hosted PostgreSQL database on Supabase, currently
+  <strong>11,629 rows</strong> across eight tables, together with four views
+  expressing the questions the models will ask: usable events, electronic
+  events, the history of each event across observations, and the genre mix of
+  each venue. Current state is upserted so that re-running is harmless, while
+  observations are appended and never overwritten.
+</p>
+
+<h2 id="code">Code</h2>
+
+<p>
+  Written in <strong>Python 3</strong>. Core packages: <code>requests</code> for
+  the API, the standard-library <code>sqlite3</code> for storage,
+  <code>matplotlib</code> for the figures, and <code>python-dotenv</code> for
+  credential handling. Every file below is in the
+  <a href="https://github.com/victormartinez2709/eventRecommender">project repository</a>.
+</p>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/config.py">src/config.py</a> &mdash; settings and credentials, in one place</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/db.py">src/db.py</a> &mdash; the twelve-table schema</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/tm_client.py">src/tm_client.py</a> &mdash; API client, throttling, quota, raw archiving</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/cache.py">src/cache.py</a> &mdash; response cache with distance-based lifetimes</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/collect_events.py">src/collect_events.py</a> &mdash; recursive date slicing around the paging cap</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/normalize_tm.py">src/normalize_tm.py</a> &mdash; archived responses into relational tables</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/clean.py">src/clean.py</a> &mdash; the four cleaning stages described above</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/audit.py">src/audit.py</a> &mdash; the twenty-seven verification checks</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/supabase_sync.py">src/supabase_sync.py</a> &mdash; publication to the hosted database</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/src/weekly_run.py">src/weekly_run.py</a> &mdash; the scheduled job that runs all of the above</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/figures.py">figures.py</a> &mdash; every figure on this page</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/export_data.py">export_data.py</a> &mdash; the CSV exports and the before/after images</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/supabase_schema.sql">supabase_schema.sql</a> &mdash; the hosted schema and views</li>
+</ul>
+
+<h2 id="limits">What this data cannot show</h2>
+
+<p>
+  <strong>Coverage is partial.</strong> Ticketmaster lists events ticketed
+  through its own platform. A substantial part of Colorado's electronic scene
+  sells through other services or at the door, so conclusions drawn here
+  describe the ticketed market rather than the whole scene.
+</p>
+
+<p>
+  <strong>There are no users.</strong> This dataset describes events, not the
+  people attending them. It supports content-based and graph-based
+  recommendation, but not collaborative filtering, because no interaction
+  history exists. Obtaining a listener signal is the main open problem for the
+  next stage of the project.
+</p>
+
+<p>
+  <strong>The labels are imperfect.</strong> Genre comes from Ticketmaster, and
+  Ticketmaster is occasionally wrong; 27% of events carry no informative genre
+  at all. The lineup rule repairs part of this, but the ground truth is noisy
+  and any accuracy figure reported later must be read with that in mind.
+</p>
+
+<p>
+  <strong>The history is short.</strong> The observation log begins on the day
+  collection began. Questions about how prices move or how quickly shows sell
+  out cannot be answered yet, only posed and waited on.
+</p>
 
 </main>
 

@@ -1,200 +1,282 @@
 """
-Database schema and connection helper.
+Database schema for the Ticketmaster dataset.
 
-Run this file directly once to create the database:
+Run once to create it:
     python src/db.py
 """
 
 from __future__ import annotations
+
 import sqlite3
 
 from config import DB_PATH
 
-# A "schema" is just the set of CREATE TABLE statements describing your tables.
-# IF NOT EXISTS means running this script twice is harmless.
 SCHEMA = """
 -- ---------------------------------------------------------------------------
--- Crawl bookkeeping: which artists we still need to fetch.
+-- Venues. Ticketmaster supplies a real venue id, so no name-hashing is needed.
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS frontier (
-    key         TEXT NOT NULL,      -- 'id_15390659' or a raw artist name
-    kind        TEXT NOT NULL,      -- 'artist' (profile) or 'events'
-    depth       INTEGER NOT NULL DEFAULT 0,
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending|done|not_found|error
-    attempts    INTEGER NOT NULL DEFAULT 0,
-    last_error  TEXT,
-    updated_at  TEXT,
-    -- Each artist needs TWO rows: one to fetch the profile, one to fetch events.
-    -- The key alone must NOT be the primary key, or the second row is silently
-    -- dropped by INSERT OR IGNORE and no events are ever collected.
-    PRIMARY KEY (key, kind)
-);
-CREATE INDEX IF NOT EXISTS idx_frontier_status ON frontier(status, kind);
-
--- ---------------------------------------------------------------------------
--- Core entities
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS artists (
-    artist_id          TEXT PRIMARY KEY,
-    name               TEXT NOT NULL,
-    mbid               TEXT,        -- MusicBrainz ID: the join key to everything else
-    url                TEXT,
-    image_url          TEXT,
-    facebook_page_url  TEXT,
-    first_seen_at      TEXT NOT NULL,
-    last_seen_at       TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_artists_mbid ON artists(mbid);
-CREATE INDEX IF NOT EXISTS idx_artists_name ON artists(name);
-
--- Append-only time series. tracker_count is a snapshot when you ask for it, so the
--- ONLY way to have a history is to sample it repeatedly. Start this early.
-CREATE TABLE IF NOT EXISTS artist_snapshots (
-    artist_id             TEXT NOT NULL,
-    observed_at           TEXT NOT NULL,
-    tracker_count         INTEGER,
-    upcoming_event_count  INTEGER,
-    PRIMARY KEY (artist_id, observed_at)
-);
-
--- Bandsintown gives no venue ID, so we build one by hashing a normalised name+place.
 CREATE TABLE IF NOT EXISTS venues (
-    venue_id   TEXT PRIMARY KEY,
-    name       TEXT,
-    city       TEXT,
-    region     TEXT,
-    country    TEXT,
-    latitude   REAL,
-    longitude  REAL
+    venue_id      TEXT PRIMARY KEY,
+    name          TEXT,
+    city          TEXT,
+    state_code    TEXT,
+    country_code  TEXT,
+    address       TEXT,
+    postal_code   TEXT,
+    latitude      REAL,
+    longitude     REAL,
+    timezone      TEXT,
+    market        TEXT,
+    dma_id        TEXT,
+    url           TEXT,
+    fetched_at    TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_venues_city ON venues(city, region);
+CREATE INDEX IF NOT EXISTS idx_venues_city ON venues(city, state_code);
 
+-- ---------------------------------------------------------------------------
+-- Artists. Ticketmaster calls them "attractions".
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS attractions (
+    attraction_id   TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    url             TEXT,
+    segment_id      TEXT,
+    segment_name    TEXT,
+    genre_id        TEXT,
+    genre_name      TEXT,
+    subgenre_id     TEXT,
+    subgenre_name   TEXT,
+    upcoming_events INTEGER,
+    image_url       TEXT,
+    first_seen_at   TEXT NOT NULL,
+    last_seen_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attractions_name ON attractions(name);
+CREATE INDEX IF NOT EXISTS idx_attractions_genre ON attractions(genre_name, subgenre_name);
+
+-- Spotify, MusicBrainz, Last.fm, YouTube, homepage... the join keys to
+-- everything outside Ticketmaster.
+CREATE TABLE IF NOT EXISTS attraction_links (
+    attraction_id TEXT NOT NULL,
+    platform      TEXT NOT NULL,
+    url           TEXT NOT NULL,
+    PRIMARY KEY (attraction_id, platform, url)
+);
+
+-- ---------------------------------------------------------------------------
+-- Events. The primary unit of this dataset.
+-- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS events (
-    event_id          TEXT PRIMARY KEY,
-    headliner_id      TEXT,      -- the artist whose feed this event came from
-    venue_id          TEXT,
-    datetime_local    TEXT,      -- exactly as Bandsintown gave it: LOCAL venue time
-    datetime_utc      TEXT,      -- computed by us from the venue coordinates
-    on_sale_datetime  TEXT,
-    title             TEXT,
-    description       TEXT,
-    url               TEXT,
-    fetched_at        TEXT NOT NULL,
+    event_id        TEXT PRIMARY KEY,
+    name            TEXT,
+    url             TEXT,
+    venue_id        TEXT,
+
+    local_date      TEXT,     -- venue-local calendar date, as supplied
+    local_time      TEXT,     -- venue-local clock time, as supplied
+    datetime_utc    TEXT,     -- the same instant in UTC, supplied by the API
+    timezone        TEXT,
+    status          TEXT,     -- onsale / offsale / cancelled / postponed / rescheduled
+
+    onsale_start    TEXT,     -- when tickets went on sale: gives announcement lead time
+    onsale_end      TEXT,
+
+    price_min       REAL,
+    price_max       REAL,
+    price_currency  TEXT,
+
+    promoter_name   TEXT,
+
+    -- The primary classification, denormalised for convenient querying.
+    -- Every classification an event carries is also in event_classifications.
+    segment_id      TEXT,
+    segment_name    TEXT,
+    genre_id        TEXT,
+    genre_name      TEXT,
+    subgenre_id     TEXT,
+    subgenre_name   TEXT,
+
+    fetched_at      TEXT NOT NULL,
     FOREIGN KEY (venue_id) REFERENCES venues(venue_id)
 );
-CREATE INDEX IF NOT EXISTS idx_events_datetime ON events(datetime_local);
+CREATE INDEX IF NOT EXISTS idx_events_date ON events(local_date);
+CREATE INDEX IF NOT EXISTS idx_events_genre ON events(genre_name, subgenre_name);
 CREATE INDEX IF NOT EXISTS idx_events_venue ON events(venue_id);
 
--- THE GRAPH. One row per (event, artist-on-that-bill). Two artists sharing an
--- event_id is a co-billing edge, and that is the core signal of the whole thesis.
-CREATE TABLE IF NOT EXISTS event_lineup (
-    event_id     TEXT NOT NULL,
-    artist_name  TEXT NOT NULL,
-    artist_id    TEXT,          -- NULL until we resolve the name to an ID
-    position     INTEGER,       -- 0 = first listed (usually the headliner)
-    PRIMARY KEY (event_id, artist_name)
-);
-CREATE INDEX IF NOT EXISTS idx_lineup_artist ON event_lineup(artist_id);
-
-CREATE TABLE IF NOT EXISTS offers (
-    event_id     TEXT NOT NULL,
-    type         TEXT,
-    url          TEXT,
-    status       TEXT,          -- 'available' / 'sold out' — a real demand signal
-    observed_at  TEXT NOT NULL,
-    PRIMARY KEY (event_id, type, observed_at)
+-- An event may carry more than one classification; keep them all.
+CREATE TABLE IF NOT EXISTS event_classifications (
+    event_id      TEXT NOT NULL,
+    is_primary    INTEGER NOT NULL DEFAULT 0,
+    segment_id    TEXT,
+    segment_name  TEXT,
+    genre_id      TEXT,
+    genre_name    TEXT,
+    subgenre_id   TEXT,
+    subgenre_name TEXT,
+    PRIMARY KEY (event_id, segment_id, genre_id, subgenre_id)
 );
 
--- Genre/tags pulled from Last.fm, MusicBrainz, Discogs. Kept raw and separate,
--- because the mapping from messy tags to clean genres is a modelling decision
--- you will change your mind about several times.
-CREATE TABLE IF NOT EXISTS artist_tags (
-    artist_id   TEXT NOT NULL,
-    source      TEXT NOT NULL,   -- 'lastfm' | 'musicbrainz' | 'discogs' | 'bandsintown'
-    tag         TEXT NOT NULL,
-    weight      REAL,
+-- THE LINEUP. One row per artist per event. Two artists sharing an event_id
+-- is a co-performance edge.
+CREATE TABLE IF NOT EXISTS event_attractions (
+    event_id      TEXT NOT NULL,
+    attraction_id TEXT NOT NULL,
+    position      INTEGER,     -- 0 = first listed, usually the headliner
+    PRIMARY KEY (event_id, attraction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ea_attraction ON event_attractions(attraction_id);
+
+-- ---------------------------------------------------------------------------
+-- The classification taxonomy itself, pulled from /classifications.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS classifications (
+    segment_id    TEXT NOT NULL,
+    segment_name  TEXT,
+    genre_id      TEXT,
+    genre_name    TEXT,
+    subgenre_id   TEXT,
+    subgenre_name TEXT,
+    fetched_at    TEXT NOT NULL,
+    PRIMARY KEY (segment_id, genre_id, subgenre_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- What was collected, when, and whether it was complete. The deep-paging cap
+-- means a slice returning 1000+ results was truncated, so record it.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS collection_log (
+    slice_start    TEXT NOT NULL,
+    slice_end      TEXT NOT NULL,
+    params         TEXT,
+    total_elements INTEGER,
+    pages_fetched  INTEGER,
+    truncated      INTEGER NOT NULL DEFAULT 0,
+    fetched_at     TEXT NOT NULL,
+    PRIMARY KEY (slice_start, slice_end, params)
+);
+
+-- ---------------------------------------------------------------------------
+-- HTTP response cache. Keyed by a hash of the request path and parameters with
+-- the API key removed, so re-runs cost no quota and return instantly.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_cache (
+    cache_key   TEXT PRIMARY KEY,
+    path        TEXT NOT NULL,
+    params      TEXT NOT NULL,
+    payload     TEXT NOT NULL,
     fetched_at  TEXT NOT NULL,
-    PRIMARY KEY (artist_id, source, tag)
+    expires_at  TEXT NOT NULL,
+    hits        INTEGER NOT NULL DEFAULT 0,
+    last_hit_at TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_cache_expiry ON api_cache(expires_at);
 
--- Which artists we discovered from which Bandsintown city+genre page. This is how
--- you know an artist is "a Colorado electronic artist" in the first place.
-CREATE TABLE IF NOT EXISTS seed_discovery (
-    artist_id     TEXT NOT NULL,
-    artist_name   TEXT,
-    city_slug     TEXT NOT NULL,
-    genre_slug    TEXT NOT NULL,
-    discovered_at TEXT NOT NULL,
-    PRIMARY KEY (artist_id, city_slug, genre_slug)
+-- ---------------------------------------------------------------------------
+-- Append-only observation log.
+--
+-- Ticketmaster is a live ticketing feed, not an archive: events disappear once
+-- they are off-sale, and prices and status change while they are listed. The
+-- events table holds current state; this table holds every time we saw an
+-- event and what it looked like then. It is the only way to recover price
+-- movement, sell-outs and cancellations, and it cannot be backfilled.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS event_observations (
+    event_id       TEXT NOT NULL,
+    observed_at    TEXT NOT NULL,
+    status         TEXT,
+    price_min      REAL,
+    price_max      REAL,
+    lineup_size    INTEGER,
+    days_until     INTEGER,      -- days from observation to the event date
+    PRIMARY KEY (event_id, observed_at)
+);
+CREATE INDEX IF NOT EXISTS idx_obs_event ON event_observations(event_id);
+
+-- ---------------------------------------------------------------------------
+-- Cleaning output. One row per event, produced by clean.py. Kept separate from
+-- `events` so the raw parse is never overwritten by a cleaning decision.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS events_clean (
+    event_id         TEXT PRIMARY KEY,
+    dedup_group      TEXT NOT NULL,   -- venue + date + normalised headliner
+    venue_canonical_id TEXT,          -- same building listed under several ids
+    headliner        TEXT,            -- first real artist, junk listings removed
+    is_duplicate     INTEGER NOT NULL DEFAULT 0,
+    is_cancelled     INTEGER NOT NULL DEFAULT 0,
+    genre_clean      TEXT,            -- "None"/"Undefined" collapsed to NULL
+    subgenre_clean   TEXT,
+    is_electronic    INTEGER NOT NULL DEFAULT 0,
+    name_clean       TEXT,
+    lineup_size      INTEGER NOT NULL DEFAULT 0,
+    lead_time_days   INTEGER,         -- on-sale date to event date
+    weekday          INTEGER,
+    cleaned_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_clean_group ON events_clean(dedup_group);
+CREATE INDEX IF NOT EXISTS idx_clean_genre ON events_clean(genre_clean, subgenre_clean);
+
+-- ---------------------------------------------------------------------------
+-- Weekly run bookkeeping, and what each run pushed to Supabase.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS runs (
+    run_id         TEXT PRIMARY KEY,
+    started_at     TEXT NOT NULL,
+    finished_at    TEXT,
+    api_calls      INTEGER,
+    cache_hits     INTEGER,
+    events_seen    INTEGER,
+    events_new     INTEGER,
+    synced_rows    INTEGER,
+    notes          TEXT
 );
 """
 
 
+
 def connect() -> sqlite3.Connection:
-    """Open the database with settings that make life easier."""
+    """Open the Ticketmaster database."""
     conn = sqlite3.connect(DB_PATH)
-    # Rows come back as objects you can index by column name: row["name"]
-    # instead of row[1]. Much less error-prone than counting columns.
     conn.row_factory = sqlite3.Row
-    # WAL = write-ahead logging. Lets you read the DB (e.g. from a notebook)
-    # while the crawler is still writing to it.
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
-def _migrate_frontier(conn) -> bool:
-    """
-    Repair the original frontier table, which declared `key TEXT PRIMARY KEY`.
+# CREATE TABLE IF NOT EXISTS does nothing when the table already exists, so a
+# new column in SCHEMA never reaches an existing database. These are ALTERed in.
+_EXPECTED_COLUMNS = {
+    "events_clean": {
+        "venue_canonical_id": "TEXT",
+        "headliner": "TEXT",
+    },
+}
 
-    Each artist needs two rows (one for the profile, one for the events). With
-    the key alone as the primary key the second row collided with the first and
-    was silently discarded by INSERT OR IGNORE, so no events were ever queued.
 
-    Existing progress is preserved: rows are copied into the corrected table.
-    """
-    row = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='frontier'"
-    ).fetchone()
-    if not row or "PRIMARY KEY (key, kind)" in row[0]:
-        return False  # absent, or already correct
-
-    print("  migrating frontier table to a composite primary key...")
-    conn.executescript("""
-        ALTER TABLE frontier RENAME TO frontier_legacy;
-
-        CREATE TABLE frontier (
-            key         TEXT NOT NULL,
-            kind        TEXT NOT NULL,
-            depth       INTEGER NOT NULL DEFAULT 0,
-            status      TEXT NOT NULL DEFAULT 'pending',
-            attempts    INTEGER NOT NULL DEFAULT 0,
-            last_error  TEXT,
-            updated_at  TEXT,
-            PRIMARY KEY (key, kind)
-        );
-
-        INSERT OR IGNORE INTO frontier
-            (key, kind, depth, status, attempts, last_error, updated_at)
-        SELECT key, kind, depth, status, attempts, last_error, updated_at
-        FROM frontier_legacy;
-
-        DROP TABLE frontier_legacy;
-    """)
-    n = conn.execute("SELECT COUNT(*) FROM frontier").fetchone()[0]
-    print(f"  migration done, {n} rows preserved")
-    return True
+def ensure_columns(conn) -> list:
+    """Add columns missing from an existing table. Returns what it added."""
+    added = []
+    for table, columns in _EXPECTED_COLUMNS.items():
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,)).fetchone()
+        if not exists:
+            continue
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col, decl in columns.items():
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                added.append(f"{table}.{col}")
+    return added
 
 
 def init_db() -> None:
-    """Create every table, and repair the old frontier schema. Safe to re-run."""
     with connect() as conn:
-        _migrate_frontier(conn)
         conn.executescript(SCHEMA)
+        added = ensure_columns(conn)
+    if added:
+        print(f"Added missing columns: {', '.join(added)}")
     print(f"Database ready at {DB_PATH}")
 
 
-# This guard means the code below runs only when you execute this file directly
-# (`python src/db.py`), not when another module does `from db import connect`.
 if __name__ == "__main__":
     init_db()

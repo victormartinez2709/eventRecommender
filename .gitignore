@@ -1,22 +1,41 @@
-#never commit
+# Secrets — never commit. The wildcard matters: ".env" alone does NOT match
+# ".env.backup2", which is how a Supabase key reached a commit and tripped
+# GitHub secret scanning. Nothing named .env* is published, template included.
 .env
+.env*
 
 # Data: the bulk is ignored, but a committed sample is required by the
 # assignment (the website must link to real raw and clean data).
 raw/*
 !raw/sample/
-data/*
-!data/sample/
-!data/.gitkeep
+# The full gzipped archives stay OUT of the repository. Responses captured
+# before credential redaction was added carry the API key inside the response
+# "url" field, so the archives are not safe to publish. The website links to
+# redacted sample responses in raw/sample/ and to the complete parsed raw
+# table in exports/events_raw.csv instead.
+# Nothing under data/ is published. The Bandsintown-era sample CSVs that used
+# to live in data/sample/ carried an app_id inside a URL column.
+data/
 
-exports/
+# exports/ IS committed: the assignment requires the website to link to the
+# raw and the cleaned data, so these CSVs have to be public.
 
-# Python
+# Python — note the wildcard: a stray ".venv-1" must be ignored too, or a
+# whole virtualenv ends up staged for commit.
 __pycache__/
 *.py[cod]
-.venv/
-venv/
+.venv*/
+venv*/
+env/
 .ipynb_checkpoints/
 
 # Editor / OS
 .DS_Store
+
+# Local safety copies and files that are not part of the deliverable
+backups/
+notebooks/
+
+# Files delivered into the chat, not part of the project
+"Claude outputs/"
+Claude outputs/
