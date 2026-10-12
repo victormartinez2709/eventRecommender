@@ -1,7 +1,9 @@
-requests>=2.31          # Ticketmaster API, MusicBrainz, and the Supabase REST endpoint
-python-dotenv>=1.0      # loads keys from .env so they never touch the code
-tqdm>=4.66              # progress bars on long runs
-pandas>=2.2             # dataframes for analysis
-pyarrow>=15.0           # Parquet export
-matplotlib>=3.8         # figures
+requests>=2.31          #Ticketmaster API, MusicBrainz, and the Supabase REST endpoint
+python-dotenv>=1.0      #loads keys from .env so they never touch the code
+tqdm>=4.66              #progress bars on long runs
+pandas>=2.2             #dataframes for analysis
+pyarrow>=15.0           #Parquet export
+matplotlib>=3.8         #figures
 numpy>=1.26
+scikit-learn>=1.3     #Module 2: KMeans, silhouette, StandardScaler, PCA
+scipy>=1.10           #Module 2: hierarchical clustering (linkage, dendrogram)

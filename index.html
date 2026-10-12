@@ -35,7 +35,7 @@
 <p>
 Live electronic music occupies an unusual position in the contemporary music economy.
 Recorded electronic music circulates almost entirely online, through streaming platforms
-and download stores, while the culture that produces it remains stubbornly physical and
+and download stores, while the culture that produces it remains physical and
 local. A record can reach a listener anywhere on earth within seconds of release, but the
 performance of that record happens in a specific room, on a specific night, in front of a
 few hundred people. Colorado is a substantial market for exactly this kind of event.
@@ -58,7 +58,7 @@ miss the smaller shows. Larger touring acts are easy to hear about precisely bec
 are marketed heavily, while the long tail of local and regional artists depends on an
 audience that already knows to look for them. Genre labels compound the problem rather
 than solving it: a single category such as "electronic" is applied to ambient, house,
-drum and bass, dubstep and hard techno alike, styles whose audiences overlap far less
+drum and bass, dubstep and techno alike, styles whose audiences overlap far less
 than the shared label implies. The result is a discovery failure that runs in both
 directions. A listener who would happily pay to see a particular artist may never learn
 that the artist performed fifteen minutes from their home. An artist who could have
@@ -67,7 +67,6 @@ heard about it.
 </p>
 
 <p>
-The consequences fall unevenly, and they fall hardest on the people with the least slack.
 For audiences, the cost is a diminished cultural life and money spent on the shows they
 happened to hear about rather than the shows they would most have enjoyed. For emerging
 artists, the cost is more severe. Live performance is where a large share of working
@@ -98,22 +97,6 @@ playing on Thursday and that they would probably love it. The gap between what i
 for recorded music and what is available for live music remains wide.
 </p>
 
-<p>
-What makes this gap interesting is that live music generates a kind of information that
-recorded music simply does not have. Every concert bill is a curatorial judgment: a
-promoter or booker decides that these particular artists belong on the same stage on the
-same night, in a particular order, in a particular room. Those decisions are made by
-people with deep knowledge of a local scene, and they encode stylistic affinities far
-finer than any genre vocabulary can express. Venues develop identities and programme
-consistently within them. Artists tour along routes that reflect where their audiences
-actually are. None of this is captured by the audio of a recording or by a listener's play
-count, and all of it is publicly visible in the historical record of who performed where
-and alongside whom. Whether that accumulated curatorial knowledge can be used to help
-people find live music they would love, and specifically whether it can be done for the
-Colorado electronic scene where the data is dense and the results can be checked against
-lived experience, is the question this project sets out to answer.
-</p>
-
 <figure>
   <img src="assets/figures/intro_map.png" alt="Map of Colorado showing the cities and venue clusters in the study region">
   <figcaption>
@@ -127,6 +110,26 @@ lived experience, is the question this project sets out to answer.
     Boulder and Colorado Springs within roughly an hour&rsquo;s drive, which
     means a listener's realistic set of options on any given night is regional rather than
     strictly local.
+  </figcaption>
+</figure>
+
+<p>
+One piece of information appears in every listing: the venue. Lineups change every
+night, but a venue&rsquo;s programming stays fairly steady, because its size, hours
+and regular audience favor certain kinds of shows. If those venue identities can be
+measured, they connect a show a listener already enjoyed to similar nights at
+similar rooms. This project therefore collects every music event on sale in
+Colorado each week from Ticketmaster, cleans it, and turns it into a numerical
+profile of each venue (Figure 2). Those profiles are then explored with clustering,
+to find which venues program alike, and with PCA, to find what separates them,
+before later modules use them for prediction and recommendation.
+</p>
+
+<figure>
+  <img src="assets/figures/intro_pipeline.png" alt="Diagram: Listings, Clean events, Venue profiles, Clustering and PCA, Recommend shows">
+  <figcaption>
+    <strong>Figure 2. From listings to recommendations.</strong> The blue steps are
+    the ones added in this module.
   </figcaption>
 </figure>
 

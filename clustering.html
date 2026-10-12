@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clustering &middot; Live Electronic Music Discovery in Colorado</title>
 <link rel="stylesheet" href="assets/style.css">
+<style>main a { overflow-wrap: anywhere; }</style>
 </head>
 <body>
 
@@ -30,23 +31,192 @@
 
 <main>
 <h1>Clustering</h1>
-<p class="lede">To be completed in Module 2.</p>
+<p class="lede">Do Colorado venues fall into natural groups by the way they program their calendars?</p>
 
-<div class="pending">
-  <strong>Not yet started.</strong> This section is completed in Module 2.
+<h2 id="overview">Overview</h2>
+
+<p>
+  Clustering is an unsupervised method: it takes rows of data with no labels and
+  groups them so that rows in the same group are similar and rows in different
+  groups are not. There are two main types. <strong>Partitional</strong>
+  clustering, such as k-means, splits the data into <em>k</em> groups chosen in
+  advance: each row goes to its nearest centroid, each centroid moves to the mean
+  of its rows, and this repeats until nothing changes. <strong>Hierarchical</strong>
+  clustering does not need <em>k</em>: it starts with every row as its own
+  cluster and keeps merging the two closest clusters, which produces a tree
+  (dendrogram) that can be cut at any height.
+</p>
+
+<figure>
+  <img src="assets/figures/clustering/concept_partitional_vs_hierarchical.png" alt="k-means groups on synthetic points next to a dendrogram of the same points">
+  <figcaption><strong>Figure 1. Partitional vs. hierarchical clustering</strong> on the same made-up points.</figcaption>
+</figure>
+
+<p>
+  Both methods need a <strong>distance metric</strong>. k-means uses
+  <strong>Euclidean</strong> distance, the straight line between two rows. The
+  hierarchical clustering here uses <strong>cosine similarity</strong>, which
+  compares the angle between two rows and ignores their length; the distance is
+  1 &minus; cosine similarity. Manhattan distance is shown for comparison.
+</p>
+
+<figure>
+  <img src="assets/figures/clustering/concept_distances.png" alt="Euclidean, Manhattan and cosine measures between two vectors A and B">
+  <figcaption><strong>Figure 2. Three distance measures</strong> between the same two rows A and B.</figcaption>
+</figure>
+
+<p>
+  <strong>How clustering is used here.</strong> Each venue is described by
+  numbers about what and how it books, and the venues are clustered without
+  labels. If groups appear, they show which rooms program alike, which is
+  useful for recommending a similar night at a similar room.
+</p>
+
+<h2 id="data">Data Prep</h2>
+
+<p>
+  Clustering needs <strong>unlabeled numeric data</strong>: numeric because the
+  methods compute distances, and unlabeled because the method must find the
+  groups on its own. The cleaned data from Module 1 is one row per event with
+  text columns (Figure 3), so it was turned into one row per venue with 16
+  numbers: the share of its events in each genre group (9 columns), the share on
+  Friday/Saturday, the share starting at 9 pm or later, the average start hour,
+  the average number of artists per bill, the share of multi-artist bills, the
+  median days between on-sale and the event, and the log of its number of
+  events. Only venues with at least 8 events were kept: <strong>30 venues</strong>
+  (1,082 of 1,207 live events, snapshot of 11 October 2026). Venue names were
+  removed (Figure 4), and the columns were standardized (mean 0, standard
+  deviation 1) in the code so that no column dominates the distances.
+</p>
+
+<figure>
+  <img src="assets/figures/clustering/prep_before_events.png" alt="Ten event rows with text columns such as venue, city and genre">
+  <figcaption><strong>Figure 3. Before:</strong> one row per event, with text columns.</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/clustering/prep_after_features.png" alt="Ten venue rows with sixteen numeric columns and no names">
+  <figcaption><strong>Figure 4. After:</strong> one row per venue, 16 numeric columns, no labels.</figcaption>
+</figure>
+
+<ul>
+  <li>Sample of the clustering data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module2/venue_features.csv">exports/module2/venue_features.csv</a></li>
+  <li>The same data with venue names (used only to read the results): <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module2/venue_profiles_labeled.csv">exports/module2/venue_profiles_labeled.csv</a></li>
+</ul>
+
+<h2 id="code">Code</h2>
+
+<p>Python, with scikit-learn for k-means and scipy for hierarchical clustering.</p>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/venue_features.py">venue_features.py</a> &mdash; builds the venue table (Data Prep)</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/clustering.py">clustering.py</a> &mdash; k-means, elbow, silhouette, and hierarchical clustering with cosine distance</li>
+</ul>
+
+<pre><code>X = StandardScaler().fit_transform(df)
+
+#k-means for k = 3, 4, 5
+km = KMeans(n_clusters=k, n_init=10, random_state=42).fit(X)
+silhouette_score(X, km.labels_)
+
+#hierarchical clustering with cosine distance
+Z = linkage(X, method="average", metric="cosine")
+dendrogram(Z, labels=names)
+labels = fcluster(Z, t=0.99, criterion="distance")</code></pre>
+
+<h2 id="results">Results</h2>
+
+<h3>Choosing k</h3>
+
+<p>
+  The elbow plot has no sharp bend, but the drop in WCSS gets smaller after
+  <em>k</em> = 4. The silhouette score is highest at <strong><em>k</em> = 2
+  (0.37)</strong>, but that split only separates the three Club Vinyl rooms from
+  everything else. After that it is 0.26 for <em>k</em> = 3, 0.29 for
+  <em>k</em> = 4 and 0.31 for <em>k</em> = 5, so there is structure, but it is
+  moderate.
+</p>
+
+<figure>
+  <img src="assets/figures/clustering/elbow.png" alt="Elbow plot of WCSS for k from 1 to 10">
+  <figcaption><strong>Figure 5. Elbow method.</strong></figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/clustering/silhouette_by_k.png" alt="Average silhouette score for k from 2 to 10, highest at k = 2">
+  <figcaption><strong>Figure 6. Silhouette method.</strong> Highest at <em>k</em> = 2 (0.37).</figcaption>
+</figure>
+
+<h3>k-means with k = 3, 4 and 5</h3>
+
+<figure>
+  <img src="assets/figures/clustering/kmeans_k3_k4_k5.png" alt="Three scatter plots of the venues on PC1 and PC2 coloured by k-means cluster for k = 3, 4 and 5">
+  <figcaption><strong>Figure 7. k-means for k = 3, 4 and 5</strong>, drawn on the first two principal components (see the PCA tab). Crosses are centroids.</figcaption>
+</figure>
+
+<ul>
+  <li><strong><em>k</em> = 3:</strong> the three electronic nightclubs; nine rock and multi-artist rooms; and the other 18 venues.</li>
+  <li><strong><em>k</em> = 4:</strong> the same, but La Rumba and Stampede (Latin and country dance halls) form their own cluster.</li>
+  <li><strong><em>k</em> = 5:</strong> Grizzly Rose becomes a cluster of one venue, which is not a useful group.</li>
+</ul>
+
+<p><strong><em>k</em> = 4 is the one kept</strong>, since it is near the elbow and it is also what the hierarchical clustering suggests (below). Its clusters:</p>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Cluster (k = 4)</th><th>Venues</th><th>Averages</th></tr>
+  <tr><td>0 &middot; Electronic nightclubs (3)</td><td>Club Vinyl, The Basement at Club Vinyl, The Church Nightclub</td><td>98% electronic, 97% on Fri/Sat, start around 10 pm</td></tr>
+  <tr><td>1 &middot; Theatres &amp; concert halls (16)</td><td>Boettcher Hall, Paramount, Pikes Peak Center, Mission Ballroom, Ogden, Bluebird, Gothic, Boulder Theater, Cervantes, Aggie, Oriental, ReelWorks, Fox Theatre, Avalon, Vultures, Grizzly Rose</td><td>mixed genres (49% &ldquo;Other&rdquo;, 15% electronic), mostly one headliner</td></tr>
+  <tr><td>2 &middot; Rock &amp; multi-artist rooms (9)</td><td>Marquis, Summit Music Hall, Black Sheep, Fillmore Auditorium, Ball Arena, Meow Wolf, Red Rocks, Ophelia&rsquo;s, The Federal Theatre</td><td>41% rock, 53% of bills with 2+ artists, start around 7:20 pm</td></tr>
+  <tr><td>3 &middot; Latin &amp; country dance halls (2)</td><td>La Rumba, Stampede</td><td>69% Latin, 26% country, almost no named artists, on sale 265 days ahead</td></tr>
+</table>
 </div>
 
-<h2>Overview</h2>
-<p>To be completed.</p>
+<h3>Hierarchical clustering (cosine distance)</h3>
 
-<h2>Data</h2>
-<p>To be completed.</p>
+<figure>
+  <img src="assets/figures/clustering/dendrogram_cosine.png" alt="Dendrogram of the 30 venues with cosine distance and a dashed cut line giving four clusters">
+  <figcaption><strong>Figure 8. Dendrogram, cosine distance, average linkage.</strong> The dashed line is the cut at 0.99.</figcaption>
+</figure>
 
-<h2>Code</h2>
-<p>To be completed.</p>
+<p>
+  The tallest gap between merges is between heights 0.93 and 1.04, and a cut
+  there gives four groups, so <strong>hclust suggests <em>k</em> = 4</strong>,
+  the same as k-means. The two methods agree on 25 of the 30 venues:
+</p>
 
-<h2>Results</h2>
-<p>To be completed.</p>
+<div class="table-wrap">
+<table>
+  <tr><th>k-means \ hclust</th><th>rock group</th><th>nightclub group</th><th>Latin/country group</th><th>theatre group</th></tr>
+  <tr><td>nightclubs</td><td>0</td><td>3</td><td>0</td><td>0</td></tr>
+  <tr><td>theatres</td><td>0</td><td>1</td><td>3</td><td>12</td></tr>
+  <tr><td>rock &amp; multi-artist</td><td>8</td><td>0</td><td>0</td><td>1</td></tr>
+  <tr><td>Latin &amp; country</td><td>0</td><td>0</td><td>2</td><td>0</td></tr>
+</table>
+</div>
+
+<p>
+  The differences come from the distance. Cosine only looks at the direction of
+  a venue&rsquo;s profile, so venues that lean the same way as an extreme group,
+  just less strongly, join it: ReelWorks (58% electronic) joins the nightclubs,
+  and Grizzly Rose, Vultures and Avalon (few named artists, no multi-artist
+  bills) join the Latin and country halls. Red Rocks moves from the rock group to
+  the theatres.
+</p>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>
+  Colorado venues do have identities, but only some are sharp. The electronic
+  nightclubs and the rock and multi-artist rooms stand out with every method
+  and every <em>k</em>; the Latin and country dance halls form a smaller group;
+  and half of the venues are theatres that book a little of everything. Electronic
+  music is not limited to the clubs: it is also about 15% of the theatres&rsquo;
+  calendars (40% at Mission Ballroom), but those shows start earlier and look
+  like concerts rather than club nights. For recommendations, this means
+  <em>when</em> and <em>how</em> a venue books (start time, weekend, number of
+  artists) matters as much as the genre label.
+</p>
 
 </main>
 

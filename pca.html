@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PCA &middot; Live Electronic Music Discovery in Colorado</title>
 <link rel="stylesheet" href="assets/style.css">
+<style>main a { overflow-wrap: anywhere; }</style>
 </head>
 <body>
 
@@ -30,23 +31,141 @@
 
 <main>
 <h1>Principal Component Analysis</h1>
-<p class="lede">To be completed in Module 2.</p>
+<p class="lede">How many independent ideas do the 16 venue numbers contain?</p>
 
-<div class="pending">
-  <strong>Not yet started.</strong> This section is completed in Module 2.
+<h2 id="overview">Overview</h2>
+
+<p>
+  <strong>Principal Component Analysis (PCA)</strong> replaces many correlated
+  columns with a few new, uncorrelated columns called principal components. PC1
+  is the direction in which the data varies the most, PC2 is the direction of
+  most remaining variation perpendicular to PC1, and so on.
+</p>
+
+<p>
+  <strong>Eigenvalues and eigenvectors</strong> are the heart of PCA. An
+  eigenvector of a matrix <em>C</em> is a direction that <em>C</em> only stretches:
+  <em>C</em><strong>v</strong> = &lambda;<strong>v</strong>, where &lambda; is the
+  eigenvalue. PCA uses the covariance matrix of the standardized data: its
+  eigenvectors are the directions of the principal components, and each
+  eigenvalue is the variance along that direction, so a bigger eigenvalue means a
+  more important component (Figure 1). The same result can be obtained from the
+  singular value decomposition (SVD) of the data, which is how the software
+  computes it.
+</p>
+
+<figure>
+  <img src="assets/figures/pca/concept_eigenvectors.png" alt="Correlated points with two arrows for the eigenvectors, labelled with their eigenvalues">
+  <figcaption><strong>Figure 1. Eigenvectors and eigenvalues</strong> on made-up data: PC1 points along the cloud and carries most of the variance.</figcaption>
+</figure>
+
+<p>
+  <strong>Dimensionality reduction</strong> means describing each row with fewer
+  numbers while keeping most of the information: keep the first few components
+  and drop the rest (Figure 2). This simplifies analysis, because correlated
+  columns repeat the same information, and it makes visualization possible,
+  because people can only look at two or three axes. High-dimensional data is
+  hard to work with: it cannot be plotted, the rows become sparse so models need
+  much more data, and distances between rows become less meaningful, which hurts
+  methods such as k-means. Reducing the dimension helps with all three.
+</p>
+
+<figure>
+  <img src="assets/figures/pca/concept_projection.png" alt="Points projected onto the PC1 line, turning two numbers per point into one">
+  <figcaption><strong>Figure 2. Dimensionality reduction:</strong> two columns become one (the PC1 score) while keeping most of the variance.</figcaption>
+</figure>
+
+<h2 id="data">Data Prep</h2>
+
+<p>
+  PCA needs <strong>numeric, unlabeled data</strong>, and the columns must be
+  <strong>standardized</strong> (mean 0, standard deviation 1), because PCA follows
+  variance and a column with big numbers would take over. The data is the same 30 &times; 16 venue table used on the
+  <a href="clustering.html#data">Clustering tab</a>, after standardizing
+  (Figure 3).
+</p>
+
+<figure>
+  <img src="assets/figures/pca/prep_standardized.png" alt="Ten venue rows of standardized values">
+  <figcaption><strong>Figure 3. PCA input:</strong> the venue table after standardizing.</figcaption>
+</figure>
+
+<ul>
+  <li>Sample of the PCA data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module2/venue_features_standardized.csv">exports/module2/venue_features_standardized.csv</a></li>
+  <li>Before scaling: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module2/venue_features.csv">exports/module2/venue_features.csv</a></li>
+</ul>
+
+<h2 id="code">Code</h2>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/pca.py">pca.py</a> &mdash; standardizing, PCA, eigenvalues, loadings and the figures below</li>
+</ul>
+
+<pre><code>X = StandardScaler().fit_transform(df)
+pca = PCA(random_state=42)
+scores = pca.fit_transform(X)
+eigenvalues = pca.explained_variance_
+ratio = pca.explained_variance_ratio_
+loadings = pca.components_      #the eigenvectors</code></pre>
+
+<h2 id="results">Results</h2>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Component</th><th>Eigenvalue</th><th>% of variance</th><th>Cumulative</th></tr>
+  <tr><td>PC1</td><td>5.54</td><td>33.5%</td><td>33.5%</td></tr>
+  <tr><td>PC2</td><td>3.46</td><td>20.9%</td><td>54.4%</td></tr>
+  <tr><td>PC3</td><td>1.96</td><td>11.8%</td><td>66.2%</td></tr>
+  <tr><td>PC4</td><td>1.31</td><td>7.9%</td><td>74.1%</td></tr>
+  <tr><td>PC5</td><td>1.19</td><td>7.2%</td><td>81.3%</td></tr>
+</table>
 </div>
 
-<h2>Overview</h2>
-<p>To be completed.</p>
+<p>
+  The first two components keep 54% of the variance and the first five keep
+  81%, so the 16 columns can be reduced to about <strong>5 components</strong>
+  (Figure 4).
+</p>
 
-<h2>Data</h2>
-<p>To be completed.</p>
+<figure>
+  <img src="assets/figures/pca/scree_cumulative.png" alt="Scree plot with the variance of each component and the cumulative line passing 80% at PC5">
+  <figcaption><strong>Figure 4. Scree plot.</strong> The dashed line marks 80%.</figcaption>
+</figure>
 
-<h2>Code</h2>
-<p>To be completed.</p>
+<p>
+  The <strong>loadings</strong> (the eigenvectors) show how each original
+  variable relates to each component (Figure 5):
+</p>
 
-<h2>Results</h2>
-<p>To be completed.</p>
+<ul>
+  <li><strong>PC1 (33.5%)</strong>: late start, weekend and electronic (positive)
+      against many artists per bill, rock, pop, metal and hip-hop (negative). It
+      separates <em>club nights</em> from <em>concerts</em>.</li>
+  <li><strong>PC2 (20.9%)</strong>: long on-sale lead time and Latin (positive)
+      against electronic and late starts (negative). It separates venues that
+      plan far ahead from short-notice nightlife.</li>
+</ul>
+
+<figure>
+  <img src="assets/figures/pca/loadings_heatmap.png" alt="Heatmap of the loadings of the 16 variables on PC1, PC2 and PC3">
+  <figcaption><strong>Figure 5. Loadings</strong> of each variable on PC1&ndash;PC3. Red is positive, blue is negative.</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/pca/pc1_pc2_venues.png" alt="The 30 venues on PC1 and PC2 coloured by k-means cluster">
+  <figcaption><strong>Figure 6. The venues on PC1 and PC2</strong>, coloured by their k-means cluster (<em>k</em> = 4). Nightclubs are at the right, rock and multi-artist rooms at the lower left, and the Latin and country halls at the top.</figcaption>
+</figure>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>
+  The way Colorado venues program comes down to a few ideas: five components
+  keep 81% of the information in 16 columns. The most important one is not a
+  genre but a format, club night versus concert. Rock, metal, pop and hip-hop move
+  together with bigger bills, while electronic moves with late weekend starts, so
+  genre and format are closely tied in this market. The PCA scores give a
+  smaller, uncorrelated description of each venue that later models can use.
+</p>
 
 </main>
 
