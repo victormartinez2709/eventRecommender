@@ -1,7 +1,7 @@
 """
 Module 2: PCA tab.
 
-    python pca.py      (after clustering.py, which gives the cluster colours)
+    python pca.py      (after clustering.py, which gives the cluster colors)
 
 PCA on the same standardized venue table used for clustering.
 """
@@ -41,7 +41,7 @@ print("cumulative %:", np.round(100 * cum, 1))
 U, S, Vt = np.linalg.svd(X - X.mean(axis=0), full_matrices=False)
 print("from SVD:   ", np.round(S ** 2 / (len(X) - 1), 3))
 
-# ---------------- scree plot
+#scree plot
 pcs = np.arange(1, len(ratio) + 1)
 plt.figure(figsize=(8, 3.8))
 plt.bar(pcs, 100 * ratio, color=COLORS[0], label="each PC")
@@ -54,7 +54,7 @@ plt.legend()
 plt.savefig(FIGS + "scree_cumulative.png", dpi=160, bbox_inches="tight")
 plt.close()
 
-# ---------------- loadings: the eigenvectors (weight of each variable in each PC)
+#loadings: the eigenvectors (weight of each variable in each PC)
 loadings = pd.DataFrame(pca.components_[:3].T, index=df.columns, columns=["PC1", "PC2", "PC3"])
 print("\n", loadings.round(2))
 
@@ -70,7 +70,7 @@ plt.title("Loadings of each variable")
 plt.savefig(FIGS + "loadings_heatmap.png", dpi=160, bbox_inches="tight")
 plt.close()
 
-# ---------------- the venues on PC1 and PC2, coloured by k-means cluster (k = 4)
+#the venues on PC1 and PC2, coloured by k-means cluster (k = 4)
 plt.figure(figsize=(8, 5.5))
 for c in range(4):
     m = clusters == c

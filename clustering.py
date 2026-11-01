@@ -34,7 +34,7 @@ X = StandardScaler().fit_transform(Clustering)
 pca = PCA(n_components=2, random_state=42)
 pca_vecs = pca.fit_transform(X)
 
-# ---------------- elbow: WCSS for each value of k
+#elbow: WCSS for each value of k
 inertia_score = []
 for k in range(1, 11):
     km = KMeans(n_clusters=k, n_init=10, random_state=42)
@@ -50,7 +50,7 @@ plt.title("Elbow Method")
 plt.savefig(FIGS + "elbow.png", dpi=160, bbox_inches="tight")
 plt.close()
 
-# ---------------- silhouette: average score for each value of k
+#silhouette: average score for each value of k
 sil_score = []
 for k in range(2, 11):
     km = KMeans(n_clusters=k, n_init=10, random_state=42)
@@ -66,7 +66,7 @@ plt.title("Silhouette Method")
 plt.savefig(FIGS + "silhouette_by_k.png", dpi=160, bbox_inches="tight")
 plt.close()
 
-# ---------------- k-means with k = 3, 4 and 5
+#k-means with k = 3, 4 and 5
 kmeans_labels = {}
 fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharex=True, sharey=True)
 for ax, k in zip(axes, [3, 4, 5]):
@@ -95,7 +95,7 @@ Clustering["Cluster"] = kmeans_labels[4]
 print("\n", Clustering.groupby("Cluster").mean().round(2).T)
 Clustering = Clustering.drop(columns="Cluster")
 
-# ---------------- hierarchical clustering with cosine distance
+#hierarchical clustering with cosine distance
 #average linkage (ward only works with Euclidean distance)
 Z = linkage(X, method="average", metric="cosine")
 print("\nheights of the last merges:", np.round(Z[-6:, 2], 3))
