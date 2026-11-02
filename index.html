@@ -133,6 +133,18 @@ before later modules use them for prediction and recommendation.
   </figcaption>
 </figure>
 
+<p>
+Genre labels are a weak point of the listings. About a quarter of the events
+collected here carry no useful genre (Ticketmaster files them under
+&ldquo;Other&rdquo;), and some labels are simply wrong. If the format of an event can
+reveal what kind of night it is, those listings can still be found. The project
+therefore also asks a supervised question: from only when an event starts, which day
+it falls on, how many artists are billed and how far ahead tickets go on sale, can a
+model tell whether it is an electronic event? The Naive Bayes and Decision Trees tabs
+answer this with labeled data, and both find that late weekend starts and short
+on-sale windows are strong signs of an electronic night.
+</p>
+
 <h2>Ten Questions This Project Aims to Answer</h2>
 
 <ol class="questions">

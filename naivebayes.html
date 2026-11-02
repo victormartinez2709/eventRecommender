@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NaiveBayes &middot; Live Electronic Music Discovery in Colorado</title>
 <link rel="stylesheet" href="assets/style.css">
+<style>main a { overflow-wrap: anywhere; }</style>
 </head>
 <body>
 
@@ -30,23 +31,180 @@
 
 <main>
 <h1>Naive Bayes</h1>
-<p class="lede">To be completed in Module 3.</p>
+<p class="lede">Can an electronic night be recognized from its format alone: when it starts, which day, how many artists, and how far ahead tickets go on sale?</p>
 
-<div class="pending">
-  <strong>Not yet started.</strong> This section is completed in Module 3.
+<h2 id="overview">Overview</h2>
+
+<p>
+  <strong>Naive Bayes (NB)</strong> is a supervised classifier based on Bayes&rsquo;
+  rule. For a new row with features <em>x</em><sub>1</sub>, &hellip;,
+  <em>x</em><sub>n</sub>, it computes how likely each class is,
+  P(class | <em>x</em>) &prop; P(class) &times; P(<em>x</em><sub>1</sub> | class)
+  &times; &hellip; &times; P(<em>x</em><sub>n</sub> | class), and predicts the class
+  with the highest value. It is called &ldquo;naive&rdquo; because it assumes the
+  features are independent of each other within a class. That is rarely exactly
+  true, but it makes the model simple and fast, and it still works well in practice.
+  NB is used for spam filtering, sorting documents by topic, sentiment analysis and
+  other text problems, and as a quick baseline for any classification task.
+</p>
+
+<p>
+  <strong>Multinomial NB</strong> treats each row like a document and each feature
+  like a word count: P(feature | class) is learned from how often that feature
+  appears in the training rows of each class. It needs non-negative counts.
+  <strong>Laplace smoothing</strong> (alpha = 1) adds one to every count, so a
+  feature never seen in a class does not make the whole probability zero.
+  <strong>Bernoulli NB</strong> instead uses binary features (present or absent),
+  and it counts the <em>absence</em> of a feature as evidence too. (A third version,
+  Gaussian NB, is for continuous features and assumes a normal distribution in each
+  class.) Multinomial NB is the main model here, and Bernoulli NB is run on the same
+  data for comparison.
+</p>
+
+<p>
+  <strong>Example from this project&rsquo;s model.</strong> Take an event on a
+  Saturday, starting at 9 pm or later, with one artist, going on sale less than 30
+  days ahead, in the fall. Each probability comes from the training counts with
+  Laplace smoothing, for example P(start_9pm+ | electronic) = (83 + 1) / (840 + 24)
+  = 0.0972.
+</p>
+
+<div class="table-wrap">
+<table>
+  <tr><th></th><th>P(&middot; | electronic)</th><th>P(&middot; | not electronic)</th></tr>
+  <tr><td>Prior P(class)</td><td>0.5</td><td>0.5</td></tr>
+  <tr><td>day_sat</td><td>0.0764</td><td>0.0463</td></tr>
+  <tr><td>start_9pm+</td><td>0.0972</td><td>0.0150</td></tr>
+  <tr><td>lineup_1</td><td>0.1065</td><td>0.0961</td></tr>
+  <tr><td>lead_under30</td><td>0.0104</td><td>0.0023</td></tr>
+  <tr><td>season_fall</td><td>0.1296</td><td>0.1250</td></tr>
+  <tr><td><strong>Product</strong></td><td><strong>5.33 &times; 10<sup>&minus;7</sup></strong></td><td><strong>9.59 &times; 10<sup>&minus;9</sup></strong></td></tr>
+</table>
 </div>
 
-<h2>Overview</h2>
-<p>To be completed.</p>
+<p>
+  Normalizing, P(electronic | event) = 5.33 / (5.33 + 0.0959) = <strong>0.98</strong>,
+  so the event is classified as electronic. The late start and the short on-sale
+  window do most of the work, the same result scikit-learn gives.
+</p>
 
-<h2>Data</h2>
-<p>To be completed.</p>
+<h2 id="data">Data Prep</h2>
 
-<h2>Code</h2>
-<p>To be completed.</p>
+<p>
+  Supervised methods need <strong>labeled data</strong>: every row must already have
+  the answer the model is learning to predict. Here the label is
+  <code>electronic</code> or <code>not_electronic</code>, taken from the Module 1
+  <code>is_electronic</code> flag. The features describe only the event&rsquo;s
+  <em>format</em> (start hour, weekday, number of artists, days between on-sale and
+  the event, and month), with no genre and no venue, so the model cannot simply read
+  the answer. Only 17% of the 1,398 live events (collected 1 November 2026) are
+  electronic, so the data is a <strong>balanced sample</strong>: all 240 electronic
+  events plus 240 random non-electronic events. With equal classes, guessing would
+  score 50%.
+</p>
 
-<h2>Results</h2>
-<p>To be completed.</p>
+<figure>
+  <img src="assets/figures/naivebayes/labeled_sample.png" alt="Ten labeled event rows with name, venue, date, the five format features and the label">
+  <figcaption><strong>Figure 1. The labeled data</strong> (name, venue and date are kept only to read the results).</figcaption>
+</figure>
+
+<p>
+  Multinomial NB needs counts, so each feature was binned into categories (for
+  example <code>start_9pm+</code>, <code>day_sat</code>, <code>lead_under30</code>)
+  and one-hot encoded. Each event becomes a row of 0/1 counts, like the words in a
+  short document (Figure 2).
+</p>
+
+<figure>
+  <img src="assets/figures/naivebayes/nb_input_sample.png" alt="One-hot table of 24 zero/one columns and the label">
+  <figcaption><strong>Figure 2. The Naive Bayes input:</strong> 24 columns of 0/1 counts plus the label.</figcaption>
+</figure>
+
+<p>
+  The data was split with <code>train_test_split</code> into a <strong>training
+  set</strong> (70%, 336 events) used to build the model and a <strong>testing
+  set</strong> (30%, 144 events) used to measure it. The split is random but
+  stratified, so both sets are half electronic. The two sets must be
+  <strong>disjoint</strong> (no event in both): if the model were tested on events it
+  had already seen, it would be scored on memory instead of prediction, and the
+  accuracy would be too high.
+</p>
+
+<figure>
+  <img src="assets/figures/naivebayes/train_sample.png" alt="First six rows of the training set">
+  <figcaption><strong>Figure 3. Training set</strong> (first 6 of 336, shown as categories before one-hot encoding).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/naivebayes/test_sample.png" alt="First six rows of the testing set">
+  <figcaption><strong>Figure 4. Testing set</strong> (first 6 of 144). No event appears in both sets.</figcaption>
+</figure>
+
+<ul>
+  <li>Labeled data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/events_labeled.csv">exports/module3/events_labeled.csv</a></li>
+  <li>Training set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/nb_train.csv">exports/module3/nb_train.csv</a> &middot; Testing set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/nb_test.csv">exports/module3/nb_test.csv</a></li>
+</ul>
+
+<h2 id="code">Code</h2>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/labeled_data.py">labeled_data.py</a> &mdash; builds the labeled, balanced sample</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/naive_bayes.py">naive_bayes.py</a> &mdash; binning, one-hot encoding, the split, Multinomial and Bernoulli NB, and the figures</li>
+</ul>
+
+<pre><code>X = pd.get_dummies(binned).astype(int)      #0/1 counts
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3,
+                                                    random_state=42, stratify=y)
+mnb = MultinomialNB(alpha=1)
+mnb.fit(X_train, y_train)
+pred = mnb.predict(X_test)
+accuracy_score(y_test, pred)
+confusion_matrix(y_test, pred)</code></pre>
+
+<h2 id="results">Results</h2>
+
+<p>
+  Multinomial NB classified <strong>75% of the test events correctly</strong>,
+  against 50% for guessing. It found 48 of the 72 electronic events and 60 of the 72
+  non-electronic ones, so it is better at ruling events out than at catching every
+  electronic one. Bernoulli NB made exactly the same predictions. Every event has exactly
+  one 1 in each of the five groups, so counting what is present (multinomial) and
+  also using what is absent (Bernoulli) end up ranking the events the same way.
+</p>
+
+<figure>
+  <img src="assets/figures/naivebayes/confusion_matrices.png" alt="Confusion matrices for Multinomial and Bernoulli NB, both with 48, 24, 12 and 60">
+  <figcaption><strong>Figure 5. Confusion matrices</strong> on the 144 test events. Rows are the true label, columns the prediction.</figcaption>
+</figure>
+
+<p>
+  Because NB learns P(feature | class), it shows which categories push toward
+  &ldquo;electronic&rdquo; (Figure 6). A start at 9 pm or later is 6.5 times more
+  common among electronic events, going on sale less than 30 days ahead is 4.5 times
+  more common, and Friday, Saturday and listings with no named artists also point to
+  electronic. Sunday to Wednesday shows and early starts point the other way.
+</p>
+
+<figure>
+  <img src="assets/figures/naivebayes/category_ratios.png" alt="Bar chart of how much more common each category is among electronic events">
+  <figcaption><strong>Figure 6. Which categories point to an electronic event</strong>: P(category | electronic) divided by P(category | not electronic). Above 1 (blue) points to electronic.</figcaption>
+</figure>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>
+  Without any genre label, the format of a listing identifies an electronic event
+  about 3 times out of 4. Electronic nights in Colorado are late (9 pm or later), on
+  Fridays and Saturdays, and announced only a few weeks ahead, which matches the
+  nightclub group found on the Clustering tab. This means the project can flag
+  likely electronic shows even when Ticketmaster&rsquo;s genre is missing or just
+  &ldquo;Other&rdquo;, which is the case for about a quarter of all listings. The
+  model misses a third of the electronic events: none of the missed ones start at 9 pm
+  or later, and most are big concert-style shows (Red Rocks, Mission Ballroom, the
+  Fillmore) that look like any other concert. A few are labeling errors (a
+  <em>Nutcracker</em> performance is tagged electronic). Format is useful, but not
+  enough on its own.
+</p>
 
 </main>
 

@@ -103,3 +103,42 @@ plt.xlim(-0.9, 9.7)
 plt.ylim(-0.8, 0.8)
 plt.axis("off")
 save("assets/figures/intro_pipeline.png")
+
+#parts of a decision tree (Decision Trees, Figure 1)
+nodes = {  # x, y, text, kind
+    "root": (5, 4, "Starts after 8 pm?", "split"),
+    "a": (2.5, 2.4, "On sale less than\n30 days ahead?", "split"),
+    "b": (7.5, 2.4, "Leaf: electronic", "leaf"),
+    "c": (1.2, 0.8, "Leaf: electronic", "leaf"),
+    "d": (3.8, 0.8, "Leaf: not electronic", "leaf"),
+}
+edges = [("root", "a", "no"), ("root", "b", "yes"), ("a", "c", "yes"), ("a", "d", "no")]
+plt.figure(figsize=(8, 4.2))
+for p, c, lab in edges:
+    (x1, y1), (x2, y2) = nodes[p][:2], nodes[c][:2]
+    plt.plot([x1, x2], [y1 - 0.3, y2 + 0.3], color="grey")
+    plt.text((x1 + x2) / 2, (y1 + y2) / 2, lab, ha="center", fontsize=9, color="grey",
+             bbox=dict(fc="white", ec="none"))
+for x, yy, text, kind in nodes.values():
+    plt.text(x, yy, text, ha="center", va="center", fontsize=10,
+             bbox=dict(boxstyle="round,pad=0.5", fc="#eaf0f8" if kind == "split" else "white",
+                       ec=BLUE if kind == "split" else ORANGE, lw=1.5))
+plt.text(9.3, 4, "root node", color=BLUE, fontsize=9)
+plt.text(9.3, 1.2, "leaves\n(predictions)", color=ORANGE, fontsize=9)
+plt.xlim(0, 10.5)
+plt.ylim(0.2, 4.6)
+plt.axis("off")
+plt.title("A decision tree is a series of yes/no questions")
+save("assets/figures/dectrees/concept_tree.png")
+
+#Gini and entropy (Decision Trees, Figure 2)
+p = np.linspace(0.001, 0.999, 200)
+plt.figure(figsize=(6, 3.8))
+plt.plot(p, 1 - p ** 2 - (1 - p) ** 2, color=BLUE, lw=2, label="Gini = 1 - p² - (1-p)²")
+plt.plot(p, -p * np.log2(p) - (1 - p) * np.log2(1 - p), color=ORANGE, lw=2,
+         label="Entropy = -p log₂p - (1-p) log₂(1-p)")
+plt.xlabel("p = share of one class in a node")
+plt.ylabel("impurity")
+plt.title("Both are 0 for a pure node and highest at a 50/50 mix")
+plt.legend(fontsize=8)
+save("assets/figures/dectrees/concept_impurity.png")

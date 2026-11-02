@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DecTrees &middot; Live Electronic Music Discovery in Colorado</title>
 <link rel="stylesheet" href="assets/style.css">
+<style>main a { overflow-wrap: anywhere; }</style>
 </head>
 <body>
 
@@ -30,23 +31,197 @@
 
 <main>
 <h1>Decision Trees</h1>
-<p class="lede">To be completed in Module 3.</p>
+<p class="lede">Which simple rules about an event&rsquo;s format separate electronic nights from everything else?</p>
 
-<div class="pending">
-  <strong>Not yet started.</strong> This section is completed in Module 3.
+<h2 id="overview">Overview</h2>
+
+<p>
+  A <strong>decision tree</strong> is a supervised model that predicts by asking a
+  series of yes/no questions about the features (Figure 1). The first question is
+  the <strong>root node</strong>, each answer leads to another question, and the
+  final <strong>leaves</strong> give the prediction: the most common class among the
+  training rows that end there. Trees are used for classification and regression,
+  for example in credit approval, medical triage or customer churn. Their main
+  strength is that the rules can be read and explained.
+</p>
+
+<figure>
+  <img src="assets/figures/dectrees/concept_tree.png" alt="Simple tree diagram: root question 'Starts after 8 pm?', a second question about on-sale lead time, and leaves predicting electronic or not">
+  <figcaption><strong>Figure 1. A decision tree is a series of yes/no questions.</strong> A simplified illustration; the real trees are in the Results.</figcaption>
+</figure>
+
+<p>
+  To grow a tree, the algorithm tries every possible split and keeps the one that
+  makes the child nodes the most <strong>pure</strong>, meaning mostly one class.
+  Purity is measured with <strong>Gini</strong>, 1 &minus; &Sigma; p<sub>i</sub><sup>2</sup>,
+  or <strong>entropy</strong>, &minus;&Sigma; p<sub>i</sub> log<sub>2</sub> p<sub>i</sub>,
+  where p<sub>i</sub> is the share of class <em>i</em> in the node. Both are 0 for a
+  pure node and highest for a 50/50 mix (Figure 2). <strong>Information
+  gain</strong> is the parent&rsquo;s entropy minus the weighted average entropy of
+  its children: the bigger the gain, the better the split.
+</p>
+
+<figure>
+  <img src="assets/figures/dectrees/concept_impurity.png" alt="Gini and entropy curves, both zero at p = 0 and p = 1 and highest at p = 0.5">
+  <figcaption><strong>Figure 2. Gini and entropy</strong> for a node with two classes.</figcaption>
+</figure>
+
+<p>
+  <strong>Example: the root split of Tree 1</strong>, &ldquo;start_hour &le;
+  20.01&rdquo; (starts by 8 pm or not), on the 336 training events:
+</p>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Node</th><th>Electronic</th><th>Not electronic</th><th>Gini</th><th>Entropy</th></tr>
+  <tr><td>Parent (all)</td><td>168</td><td>168</td><td>1 &minus; 0.5&sup2; &minus; 0.5&sup2; = 0.500</td><td>1.000</td></tr>
+  <tr><td>Starts by 8 pm (230)</td><td>75</td><td>155</td><td>1 &minus; (75/230)&sup2; &minus; (155/230)&sup2; = 0.440</td><td>0.911</td></tr>
+  <tr><td>Starts after 8 pm (106)</td><td>93</td><td>13</td><td>1 &minus; (93/106)&sup2; &minus; (13/106)&sup2; = 0.215</td><td>0.537</td></tr>
+</table>
 </div>
 
-<h2>Overview</h2>
-<p>To be completed.</p>
+<p>
+  Weighted Gini of the children = (230/336)(0.440) + (106/336)(0.215) = 0.369, a drop
+  of 0.131 from 0.500. Weighted entropy = (230/336)(0.911) + (106/336)(0.537) =
+  0.793, so the <strong>information gain = 1.000 &minus; 0.793 = 0.207</strong>. No
+  other single question gave a bigger improvement, which is why start time became
+  the root.
+</p>
 
-<h2>Data</h2>
-<p>To be completed.</p>
+<p>
+  <strong>Why there are infinitely many trees.</strong> A numeric feature can be cut
+  at any value (8 pm, 8:01 pm, 8:02 pm, &hellip;), any feature can be asked at any
+  level, and a tree can be grown to any depth. Changing the impurity measure, the
+  depth, the minimum leaf size or the training sample changes the tree. So there are
+  endlessly many possible trees, and the algorithm only finds a good one by choosing
+  the best split one step at a time.
+</p>
 
-<h2>Code</h2>
-<p>To be completed.</p>
+<h2 id="data">Data Prep</h2>
 
-<h2>Results</h2>
-<p>To be completed.</p>
+<p>
+  Supervised methods need <strong>labeled data</strong>, and only labeled rows can be
+  used. This tab uses the same labeled data as the
+  <a href="naivebayes.html#data">Naive Bayes tab</a>: 480 events (240 electronic, 240
+  not, collected 1 November 2026), labeled <code>electronic</code> or
+  <code>not_electronic</code>, with five format features and no genre or venue.
+  Scikit-learn trees need numbers, and these features already are numbers, so they
+  are used directly: the start hour (20.5 = 8:30 pm), the weekday (0 = Sunday,
+  6 = Saturday), the number of artists, the days between on-sale and the event
+  (&minus;1 = unknown) and the month (Figure 3).
+</p>
+
+<figure>
+  <img src="assets/figures/dectrees/dt_input_sample.png" alt="Eight rows of the five numeric features and the label">
+  <figcaption><strong>Figure 3. Decision tree input:</strong> five numeric features and the label.</figcaption>
+</figure>
+
+<p>
+  The data was split into a <strong>training set</strong> (70%, 336 events) to build
+  the trees and a <strong>testing set</strong> (30%, 144 events) to measure them,
+  using <code>train_test_split</code> with the same random seed as Naive Bayes, so
+  both models are tested on exactly the same events. The sets are
+  <strong>disjoint</strong>: a tree tested on events it was trained on would be
+  rewarded for memorizing, not predicting.
+</p>
+
+<figure>
+  <img src="assets/figures/dectrees/train_sample.png" alt="First six rows of the training set">
+  <figcaption><strong>Figure 4. Training set</strong> (first 6 of 336).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/dectrees/test_sample.png" alt="First six rows of the testing set">
+  <figcaption><strong>Figure 5. Testing set</strong> (first 6 of 144). No event appears in both sets.</figcaption>
+</figure>
+
+<ul>
+  <li>Labeled data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/events_labeled.csv">exports/module3/events_labeled.csv</a></li>
+  <li>Training set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/dt_train.csv">exports/module3/dt_train.csv</a> &middot; Testing set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/dt_test.csv">exports/module3/dt_test.csv</a></li>
+</ul>
+
+<h2 id="code">Code</h2>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/decision_trees.py">decision_trees.py</a> &mdash; the split, the three trees, confusion matrices, the depth loop and the Gini/entropy example</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/labeled_data.py">labeled_data.py</a> &mdash; builds the labeled data</li>
+</ul>
+
+<pre><code>X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3,
+                                                    random_state=42, stratify=y)
+tree = DecisionTreeClassifier(criterion="gini", max_depth=3, random_state=42)
+tree.fit(X_train, y_train)
+pred = tree.predict(X_test)
+accuracy_score(y_test, pred)
+plot_tree(tree, feature_names=FEATURES, class_names=list(tree.classes_), filled=True)</code></pre>
+
+<h2 id="results">Results</h2>
+
+<p>Three different trees were built on the same training set:</p>
+
+<figure>
+  <a href="assets/figures/dectrees/tree1.png"><img src="assets/figures/dectrees/tree1.png" alt="Tree 1, Gini, depth 3"></a>
+  <figcaption><strong>Figure 6. Tree 1: Gini, depth 3.</strong> Orange leaves predict electronic, blue predict not electronic.</figcaption>
+</figure>
+
+<figure>
+  <a href="assets/figures/dectrees/tree2.png"><img src="assets/figures/dectrees/tree2.png" alt="Tree 2, entropy, depth 3"></a>
+  <figcaption><strong>Figure 7. Tree 2: Entropy, depth 3.</strong> Same root as Tree 1, but different questions below it.</figcaption>
+</figure>
+
+<figure>
+  <a href="assets/figures/dectrees/tree3.png"><img src="assets/figures/dectrees/tree3.png" alt="Tree 3, Gini, depth 5"></a>
+  <figcaption><strong>Figure 8. Tree 3: Gini, depth 5</strong> (click any tree to open it full size).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/dectrees/confusion_matrices.png" alt="Confusion matrices of the three trees">
+  <figcaption><strong>Figure 9. Confusion matrices</strong> on the 144 test events. Rows are the true label, columns the prediction.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Tree</th><th>Accuracy</th><th>Electronic found</th><th>Not electronic found</th></tr>
+  <tr><td>Tree 1: Gini, depth 3</td><td>0.68</td><td>55 of 72</td><td>43 of 72</td></tr>
+  <tr><td>Tree 2: Entropy, depth 3</td><td>0.69</td><td>32 of 72</td><td>67 of 72</td></tr>
+  <tr><td>Tree 3: Gini, depth 5</td><td>0.71</td><td>55 of 72</td><td>47 of 72</td></tr>
+</table>
+</div>
+
+<p>
+  All three trees start with the same question, whether the event starts after
+  8 pm, and score between 68% and 71% (50% would be guessing). They make different
+  mistakes, though. Tree 2 rarely calls an event electronic by mistake (5 times), but
+  it misses more than half of the electronic events, while Trees 1 and 3 catch 55 of
+  the 72. The clearest rule is in Tree 1: an event <strong>after 8 pm on a Friday or
+  Saturday that goes on sale less than about five months ahead</strong> (or with an
+  unknown on-sale date) was electronic in 87 of the 92 training events that matched
+  it.
+</p>
+
+<figure>
+  <img src="assets/figures/dectrees/depth_vs_accuracy.png" alt="Training accuracy rising to 0.95 with depth while testing accuracy stays around 0.69 to 0.74">
+  <figcaption><strong>Figure 10. Accuracy by tree depth.</strong> Training accuracy keeps rising, but test accuracy stays between 0.68 and 0.74.</figcaption>
+</figure>
+
+<p>
+  Making the tree deeper does not help much. Training accuracy climbs from 0.74 to
+  0.95, but test accuracy stays between 0.68 and 0.74: the extra levels memorize the
+  training events (overfitting) instead of learning rules that carry over to new
+  ones.
+</p>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>
+  Start time is the single most useful thing to know about an event: an electronic
+  night in Colorado typically starts after 8 pm on a Friday or Saturday. With that
+  rule and how far ahead tickets go on sale, a small tree is right about 7 times out
+  of 10 without any genre label. The trees score slightly below Naive Bayes (0.68&ndash;0.71
+  against 0.75), but they give rules that can be read directly. Both models agree
+  that the format of an event says a lot about its genre, and both struggle with the
+  big early concerts by electronic artists, which look like any other concert.
+</p>
 
 </main>
 
