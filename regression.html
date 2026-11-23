@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Regression &middot; Live Electronic Music Discovery in Colorado</title>
 <link rel="stylesheet" href="assets/style.css">
+<style>main a { overflow-wrap: anywhere; }</style>
 </head>
 <body>
 
@@ -20,9 +21,10 @@
     <a href="pca.html">PCA</a>
     <a href="naivebayes.html">NaiveBayes</a>
     <a href="dectrees.html">DecTrees</a>
-    <a href="svms.html">SVMs</a>
     <a href="regression.html" class="active">Regression</a>
-    <a href="nn.html">NN</a>
+    <a href="adaboost.html">AdaBoost</a>
+    <a href="gradientboosting.html">GradientBoosting</a>
+    <a href="xgboost.html">XGBoost</a>
     <a href="conclusions.html">Conclusions</a>
     <a href="about.html">About Me</a>
   </nav>
@@ -30,23 +32,344 @@
 
 <main>
 <h1>Regression</h1>
-<p class="lede">To be completed in Module 5.</p>
+<p class="lede">How early do Colorado shows go on sale, and can a straight-line model tell an electronic night from the rest?</p>
 
-<div class="pending">
-  <strong>Not yet started.</strong> This section is completed in Module 5.
+<h2 id="overview">Overview</h2>
+
+<p>
+  This tab uses two regression models. They look alike but answer different kinds of
+  questions. <strong>Linear regression</strong> predicts a <em>number</em>. It
+  fits ŷ = b<sub>0</sub> + b<sub>1</sub>x<sub>1</sub> + &hellip; + b<sub>p</sub>x<sub>p</sub>,
+  where b<sub>0</sub> is the intercept and each coefficient b<sub>j</sub> is how much the
+  prediction changes when x<sub>j</sub> goes up by one and the other features stay the
+  same. The coefficients are chosen by <strong>least squares</strong>: the difference
+  between a real value and the line, y &minus; ŷ, is called the <strong>residual</strong>,
+  and the line is the one with the smallest sum of squared residuals (Figure 1).
+  Squaring keeps misses above and below the line from cancelling out, and it punishes big
+  misses more. How good the fit is gets measured with the RMSE (the typical size of a
+  miss, in the units of y) and with R&sup2; = 1 &minus; SSR/SST, the share of the variation
+  in y that the model explains (1 = perfect, 0 = no better than always guessing the
+  average).
+</p>
+
+<figure>
+  <img src="assets/figures/regression/concept_least_squares.png" style="max-width:560px; margin:0 auto" alt="Five points, the least-squares line y-hat = 0.6 + 0.8x, and the vertical residuals between the points and the line">
+  <figcaption><strong>Figure 1. Linear regression.</strong> The five points from the Week 10 worksheet. The orange dashed lines are the residuals; least squares picks the line ŷ = 0.6 + 0.8x because no other line has a smaller sum of their squares (here R&sup2; = 0.64).</figcaption>
+</figure>
+
+<p>
+  <strong>Logistic regression</strong> predicts a <em>class</em> (yes or no, 1 or 0).
+  A straight line is a bad fit for a 0/1 label, because it runs above 1 and below 0
+  and cannot be read as a probability (Figure 2, left). Logistic regression keeps
+  the same linear score, z = b<sub>0</sub> + b<sub>1</sub>x<sub>1</sub> + &hellip;, but
+  passes it through the <strong>sigmoid</strong>, p = 1 / (1 + e<sup>&minus;z</sup>). The
+  sigmoid turns any number into a value between 0 and 1, so p can be read as
+  P(y = 1 | x) (Figure 2, right). A score of z = 0 gives p = 0.5, large positive
+  scores give p close to 1, and large negative scores give p close to 0. The
+  probability becomes a class with a cutoff: predict 1 if p &ge; 0.5 (that is, if
+  z &ge; 0), otherwise 0. Unlike linear regression there is no formula for the
+  coefficients; they are found by maximizing the likelihood of the training labels
+  (minimizing the log loss) step by step.
+</p>
+
+<figure>
+  <img src="assets/figures/regression/concept_line_vs_sigmoid.png" alt="Left: a straight line fitted to 0/1 data goes below 0 and above 1. Right: the sigmoid curve stays between 0 and 1 and crosses 0.5 where z = 0">
+  <figcaption><strong>Figure 2. Why a 0/1 label needs logistic regression</strong> (made-up start times). Left: the least-squares line predicts &ldquo;probabilities&rdquo; below 0 and above 1. Right: the sigmoid of the linear score stays between 0 and 1, and the cutoff p = 0.5 splits the events into two classes.</figcaption>
+</figure>
+
+<p>
+  The two models differ in what they predict (a number vs a probability and a class),
+  in how they are fitted (least squares vs maximum likelihood) and in what a
+  coefficient means. In linear regression b<sub>j</sub> is a change in y itself. In
+  logistic regression the model is linear in the <strong>log-odds</strong>,
+  log(p / (1 &minus; p)) = z, so b<sub>j</sub> is a change in the log-odds and
+  <strong>e<sup>b<sub>j</sub></sup> is the number the odds are multiplied by</strong>.
+  On this tab, linear regression predicts <em>how many days before a show tickets go on
+  sale</em>, and logistic regression returns to the question from the Naive Bayes tab:
+  <em>is an event electronic?</em>
+</p>
+
+<h2 id="data">Data Prep</h2>
+
+<p>
+  Both models are supervised, so they need <strong>labeled data</strong>, split into a
+  <strong>training set</strong> to fit the model and a <strong>testing set</strong> to
+  measure it. The two sets are <strong>disjoint</strong> (no event is in both). A model
+  scored on events it was fitted on is scored on memory, not prediction, and its error
+  would look smaller than it really is.
+</p>
+
+<h3>Linear regression: a numeric target</h3>
+
+<p>
+  Linear regression needs a <strong>numeric target</strong>. Here it is
+  <code>lead_time_days</code>: the number of days between tickets going on sale and the
+  show. This is the &ldquo;how far in advance are events announced?&rdquo; question from
+  the Introduction. The data are all Colorado events collected from 20 September to
+  23 November 2026 (no duplicates, no cancellations) that have a real on-sale date (1,024 events, 176 of them electronic).
+  Placeholder dates such as &ldquo;on sale 9999-12-31&rdquo; are removed with the
+  0&ndash;400 day rule from Module 1. The features are:
+</p>
+
+<ul>
+  <li><code>is_electronic</code> (1 = electronic), <code>start_hour</code> (20.5 = 8:30 pm), <code>fri_sat</code> (1 = Friday or Saturday) and <code>lineup_size</code> (number of artists);</li>
+  <li><code>headliner_shows_log2</code>: log<sub>2</sub>(1 + the headliner&rsquo;s upcoming Ticketmaster events), a measure of how busy, and roughly how big, the headliner is. With log<sub>2</sub>, +1 means &ldquo;twice as many shows&rdquo;;</li>
+  <li><code>days_out</code>: days from 20 September 2026 (the first collection) to the show. A show far in the future that is already listed must have gone on sale early, so this keeps the calendar date from hiding inside the other coefficients;</li>
+  <li><code>venue</code>: a category. Linear regression needs numbers, so the venue is <strong>one-hot encoded</strong>: one 0/1 column for each of the 17 venues with at least 15 events, with the smaller venues (178 events) as the baseline, where every venue column is 0 (Figure 4).</li>
+</ul>
+
+<figure>
+  <img src="assets/figures/regression/lr_data_sample.png" alt="Eight event rows with name, venue, date, the six numeric features and lead_time_days">
+  <figcaption><strong>Figure 3. The linear regression data</strong> (name and date are kept only to read the results).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/regression/lr_onehot_venue.png" alt="Each venue name becomes a column of zeros with a single one">
+  <figcaption><strong>Figure 4. One-hot encoding of the venue.</strong> Each row has a 1 in its venue&rsquo;s column and 0 everywhere else.</figcaption>
+</figure>
+
+<p>
+  The 1,024 events were split with <code>train_test_split</code> into 70% for training
+  (716 events) and 30% for testing (308 events), stratified so both sets have the same
+  share of electronic events.
+</p>
+
+<figure>
+  <img src="assets/figures/regression/lr_train_sample.png" alt="First six rows of the linear regression training set">
+  <figcaption><strong>Figure 5. Training set</strong> (first 6 of 716; the 17 venue columns are in the file but not shown).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/regression/lr_test_sample.png" alt="First six rows of the linear regression testing set">
+  <figcaption><strong>Figure 6. Testing set</strong> (first 6 of 308). The index column shows that no event appears in both sets.</figcaption>
+</figure>
+
+<h3>Logistic regression: a two-class label</h3>
+
+<p>
+  Logistic regression needs a <strong>label with two classes</strong>. It uses the same
+  label as the Naive Bayes and Decision Trees tabs, <code>electronic</code> = 1 or
+  <code>not_electronic</code> = 0, on the same balanced sample (480 events, 240 of
+  each). It also uses the same <strong>24 columns of 0/1 categories</strong> as Naive
+  Bayes (start time, weekday, number of artists, on-sale window and season) and the
+  <strong>exact same training (336) and testing (144) events</strong>. So any difference
+  from Naive Bayes comes from the model, not from the data. One category per group is
+  dropped as the baseline (Sunday, before 7 pm, 1 artist, on sale 90&ndash;180 days
+  ahead, fall), which leaves 19 columns. Every coefficient then means &ldquo;compared
+  with the baseline&rdquo;. Before fitting, the encoding was checked with 5-fold cross
+  validation <em>on the training set only</em>. The 0/1 categories scored 0.750 and the
+  five raw numbers scored 0.732, so the categories were kept.
+</p>
+
+<figure>
+  <img src="assets/figures/naivebayes/labeled_sample.png" alt="Ten labeled event rows with name, venue, date, the five format features and the label">
+  <figcaption><strong>Figure 7. The labeled data for logistic regression</strong> (the same events as on the Naive Bayes and Decision Trees tabs; name, venue and date are kept only to read the results).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/regression/logit_train_sample.png" alt="First six rows of the logistic regression training set: 19 zero/one columns and the 0/1 label">
+  <figcaption><strong>Figure 8. Logistic regression training set</strong> (first 6 of 336): 19 columns of 0/1 and the label (1 = electronic).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/regression/logit_test_sample.png" alt="First six rows of the logistic regression testing set">
+  <figcaption><strong>Figure 9. Logistic regression testing set</strong> (first 6 of 144). These are the same 144 test events as on the Naive Bayes tab.</figcaption>
+</figure>
+
+<ul>
+  <li>Linear regression data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/lead_time_events.csv">exports/module4/lead_time_events.csv</a> &middot; training set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/lr_train.csv">lr_train.csv</a> &middot; testing set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/lr_test.csv">lr_test.csv</a></li>
+  <li>Logistic regression labeled data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/events_labeled.csv">exports/module3/events_labeled.csv</a> &middot; training set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/logit_train.csv">logit_train.csv</a> &middot; testing set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/logit_test.csv">logit_test.csv</a></li>
+</ul>
+
+<h2 id="code">Code</h2>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/lead_time_data.py">lead_time_data.py</a> &mdash; builds the lead-time data from the database</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/linear_regression.py">linear_regression.py</a> &mdash; one-hot encoding, the split, <code>LinearRegression</code>, the error measures and the figures</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/logistic_regression.py">logistic_regression.py</a> &mdash; <code>LogisticRegression</code>, the comparison with Naive Bayes, and the figures</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/concept_figures.py">concept_figures.py</a> &mdash; Figures 1 and 2</li>
+</ul>
+
+<pre><code>#linear regression
+venues = pd.get_dummies(df["venue_group"], prefix="venue").astype(int).drop(columns="venue_other")
+X = pd.concat([df[NUMERIC], venues], axis=1)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42,
+                                                    stratify=df["is_electronic"])
+lr = LinearRegression().fit(X_train, y_train)
+pred = lr.predict(X_test)
+np.sqrt(mean_squared_error(y_test, pred)), r2_score(y_test, pred)
+
+#logistic regression (same columns and split as Naive Bayes)
+logit = LogisticRegression(max_iter=5000).fit(X_train, y_train)
+pred = logit.predict(X_test)                 #class, using p &gt;= 0.5
+prob = logit.predict_proba(X_test)[:, 1]     #P(electronic)
+accuracy_score(y_test, pred), confusion_matrix(y_test, pred)</code></pre>
+
+<h2 id="results">Results</h2>
+
+<h3>Linear regression: how early tickets go on sale</h3>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Testing set (308 events)</th><th>Value</th></tr>
+  <tr><td>RMSE (typical miss)</td><td><strong>59.0 days</strong></td></tr>
+  <tr><td>MAE (average miss)</td><td>44.8 days</td></tr>
+  <tr><td>R&sup2;</td><td><strong>0.46</strong> (training set: 0.52)</td></tr>
+  <tr><td>RMSE of always guessing the training average</td><td>80.8 days</td></tr>
+</table>
 </div>
 
-<h2>Overview</h2>
-<p>To be completed.</p>
+<p>
+  The model explains <strong>46% of the variation</strong> in lead time on events it
+  never saw. Its typical miss is about two months, against almost three months for
+  always guessing the average. Training and testing R&sup2; are close (0.52 and 0.46),
+  so the model is not overfitting. Figure 10 shows where it works and where it does
+  not. Electronic events (orange) sit in the lower left: they go on sale late, and the
+  model predicts this well. The biggest misses are shows that went on sale almost a year
+  ahead and were predicted at around 150 days. Many of them are
+  <strong>recurring weekly nights</strong> that a venue puts on sale for a whole season
+  at once, such as La Rumba&rsquo;s &ldquo;S&aacute;bados Sabrosos&rdquo; or Vultures&rsquo;
+  weekly Goth Night. The residuals (Figure 11) are centered on zero with no curve, so a
+  straight line is a reasonable shape, but the largest misses are all positive: shows
+  predicted at 100&ndash;200 days that really sold almost a year ahead. Nothing in a
+  single listing says that it is one night of a season-long series.
+</p>
 
-<h2>Data</h2>
-<p>To be completed.</p>
+<figure>
+  <img src="assets/figures/regression/lr_pred_vs_actual.png" style="max-width:560px; margin:0 auto" alt="Predicted against actual lead time for the 308 test events, with the perfect-prediction diagonal; electronic events cluster at short lead times">
+  <figcaption><strong>Figure 10. Predicted vs actual lead time</strong> on the testing set. Points on the dashed line are perfect predictions.</figcaption>
+</figure>
 
-<h2>Code</h2>
-<p>To be completed.</p>
+<figure>
+  <img src="assets/figures/regression/lr_residuals.png" alt="Residuals against predicted value, spreading out for larger predictions">
+  <figcaption><strong>Figure 11. Residuals</strong> (actual &minus; predicted) on the testing set. They are centered on zero; the largest misses are season-long weekly series that sold far earlier than predicted.</figcaption>
+</figure>
 
-<h2>Results</h2>
-<p>To be completed.</p>
+<figure>
+  <img src="assets/figures/regression/lr_coefficients.png" alt="Bar charts of the coefficients: electronic -13.7 days, Friday or Saturday -7, start one hour later -2.9, one more artist +4.4, headliner twice as busy +8.2; venues from The Church Nightclub -30 to La Rumba +192">
+  <figcaption><strong>Figure 12. The coefficients</strong>, in days. Left: the event features. Right: each venue compared with the smaller venues.</figcaption>
+</figure>
+
+<p><strong>Two coefficients in plain words:</strong></p>
+
+<ul>
+  <li><strong>Electronic event: &minus;13.7 days.</strong> Take two shows at the same
+  venue, on the same kind of night, with the same lineup size, an equally busy headliner
+  and the same date. If one of them is electronic, its tickets go on sale about
+  <em>two weeks later</em>. On raw averages the gap is much bigger: electronic events
+  go on sale 83 days ahead on average and other music 151 days ahead (a model with only
+  <code>is_electronic</code> gives &minus;72.8 days). So most of the gap comes from
+  <em>where</em> and <em>when</em> electronic music is played (late nights at clubs
+  such as The Church and Club Vinyl and its Basement, which all have negative venue
+  coefficients), not from the genre itself.</li>
+  <li><strong>Headliner twice as busy: +8.2 days.</strong> When the headliner has twice
+  as many upcoming Ticketmaster shows, tickets go on sale about 8 days earlier. Busy
+  touring acts are booked and announced as part of a tour, so they go on sale earlier
+  than local or occasional performers.</li>
+</ul>
+
+<p>
+  The other coefficients agree. Each hour later the show starts takes about 3 days off
+  the lead time, a Friday or Saturday show goes on sale about a week later, and each
+  extra artist adds about 4 days. The venue matters most of all. Red Rocks (+36 days)
+  and the Mission Ballroom (+18) sell far ahead, the clubs sell 2&ndash;4 weeks later
+  than the small-venue baseline, and venues with season-long weekly nights (La Rumba
+  +192, Vultures +74, Stampede +63) sell earliest of all.
+</p>
+
+<h3>Logistic regression: is it electronic?</h3>
+
+<figure>
+  <img src="assets/figures/regression/logit_confusion.png" alt="Confusion matrices: logistic regression 52, 20, 13, 59; Naive Bayes 48, 24, 12, 60">
+  <figcaption><strong>Figure 13. Confusion matrices</strong> on the same 144 test events. Rows are the true label, columns the prediction.</figcaption>
+</figure>
+
+<p>
+  Logistic regression classified <strong>111 of the 144 test events correctly
+  (accuracy 0.771)</strong>. It found 52 of the 72 electronic events and 59 of the 72
+  others. Figure 14 shows how it decides. Every test event has a linear score z, the
+  sigmoid turns it into P(electronic), and the event is called electronic when that
+  probability is above 0.5. The mistakes are the blue events above the line and the
+  orange events below it. A few non-electronic shows get a very high score because they
+  look exactly like a club night (late, on a weekend, announced a few weeks ahead), and
+  the early-evening electronic concerts get a low one.
+</p>
+
+<figure>
+  <img src="assets/figures/regression/logit_sigmoid_test.png" alt="The 144 test events placed on the sigmoid curve by their linear score, colored by true label">
+  <figcaption><strong>Figure 14. The 144 test events on the sigmoid.</strong> Orange events above the dashed line and blue events below it are correct.</figcaption>
+</figure>
+
+<p>
+  <strong>A worked example</strong> (the same event as on the Naive Bayes tab): a Saturday
+  show starting at 9 pm or later, with one artist, going on sale less than 30 days ahead,
+  in the fall. The intercept is b<sub>0</sub> = &minus;2.240, and the three categories
+  that are &ldquo;on&rdquo; add 1.446 (Saturday), 1.794 (9 pm+) and 1.039 (under 30 days),
+  so z = 2.039 and p = 1 / (1 + e<sup>&minus;2.039</sup>) = <strong>0.885</strong>.
+  The model calls it electronic, with less certainty than Naive Bayes (0.98).
+</p>
+
+<figure>
+  <img src="assets/figures/regression/logit_odds_ratios.png" alt="Odds ratios: start 9 pm or later 6.0, Friday 5.3, Saturday 4.3, on sale 30-90 days ahead 3.6, under 30 days 2.8; start 7 pm 0.55, summer 0.51">
+  <figcaption><strong>Figure 15. Odds ratios e<sup>b</sup></strong> of the 19 categories, compared with the baseline event (Sunday, before 7 pm, 1 artist, on sale 90&ndash;180 days ahead, fall).</figcaption>
+</figure>
+
+<p>
+  <strong>What one coefficient means for the odds.</strong> The coefficient of
+  <code>start_9pm+</code> is b = 1.79, so e<sup>1.79</sup> = <strong>6.0</strong>:
+  with everything else the same, a show that starts at 9 pm or later has
+  <em>six times the odds</em> of being electronic compared with one that starts before
+  7 pm. For example, odds of 1 to 2 (p = 0.33) become 3 to 1 (p = 0.75). Friday (&times;5.3)
+  and Saturday (&times;4.3) come next, then going on sale less than three months ahead
+  (&times;2.8 to &times;3.6). A 7 pm start roughly halves the odds (&times;0.55).
+</p>
+
+<h3>Logistic regression vs Naive Bayes</h3>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Same 24 columns, same 144 test events</th><th>Accuracy</th><th>Electronic found</th><th>Not electronic found</th><th>ROC AUC</th></tr>
+  <tr><td>Naive Bayes (Module 3)</td><td>0.750 (108)</td><td>48 of 72</td><td>60 of 72</td><td>0.803</td></tr>
+  <tr><td>Logistic regression</td><td><strong>0.771 (111)</strong></td><td><strong>52 of 72</strong></td><td>59 of 72</td><td><strong>0.820</strong></td></tr>
+</table>
+</div>
+
+<figure>
+  <img src="assets/figures/regression/logit_roc.png" style="max-width:560px; margin:0 auto" alt="ROC curves of logistic regression (AUC 0.82) and Naive Bayes (AUC 0.80), almost on top of each other">
+  <figcaption><strong>Figure 16. ROC curves</strong> on the test events. The higher the curve, the better the model ranks electronic events above the others at every cutoff.</figcaption>
+</figure>
+
+<p>
+  Logistic regression is slightly ahead: 3 more correct events, 4 more electronic events
+  found for one more false alarm, and a slightly higher AUC. But the two models
+  <strong>agree on 133 of the 144 events</strong>, and on 144 events one event is
+  0.7 percentage points, so the gap is within noise. The difference that matters is
+  <em>how</em> they learn. Naive Bayes treats each category as independent evidence and
+  multiplies the evidence together, so it double-counts categories that go together
+  (late starts and weekend nights), which is why its probabilities are so extreme (0.98
+  in the example). Logistic regression fits all the coefficients together, so when two
+  categories carry the same information it shares the credit between them, and its
+  probabilities are more moderate.
+</p>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>
+  Electronic shows in Colorado go on sale about two months later than other music: a
+  median of 64 days ahead against 135. For a listener, that means a monthly check
+  misses many of them. Most of the gap comes from the venues and the nights where
+  electronic music is played. At the same venue and on the same kind of night, the
+  difference is only about two weeks. Big touring headliners and large rooms such as Red
+  Rocks sell months ahead, while club nights are announced a few weeks out. Lead time is
+  therefore partly predictable (46% of its variation) from information in every listing,
+  and the venue is the most useful piece. Logistic regression confirms the Naive Bayes
+  result with a different model: a 9 pm start, a Friday or Saturday and a short on-sale
+  window each multiply the odds that a show is electronic several times over, and the
+  format of a listing alone identifies an electronic night about 3 times out of 4 (77%). For the
+  recommender, this means a newly listed late weekend show with a short on-sale window
+  can be flagged as a likely electronic night, and as a show to check often, before
+  anyone has labeled its genre.
+</p>
 
 </main>
 

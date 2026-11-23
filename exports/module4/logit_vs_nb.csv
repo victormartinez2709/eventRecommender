@@ -1,0 +1,3 @@
+model,accuracy,roc_auc
+Naive Bayes (multinomial),0.75,0.8025655864197531
+Logistic regression,0.7708333333333334,0.8201195987654322

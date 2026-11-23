@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdaBoost &middot; Live Electronic Music Discovery in Colorado</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>main a { overflow-wrap: anywhere; }</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="header-inner">
+    <h1 class="site-title">Live Electronic Music Discovery in Colorado</h1>
+    <p class="site-sub">CSCI 5612 &middot; Machine Learning &middot; Project Website &middot; V&iacute;ctor Mart&iacute;nez Gil</p>
+  </div>
+  <nav class="tabs">
+    <a href="index.html">Introduction</a>
+    <a href="dataprep_eda.html">DataPrep_EDA</a>
+    <a href="clustering.html">Clustering</a>
+    <a href="pca.html">PCA</a>
+    <a href="naivebayes.html">NaiveBayes</a>
+    <a href="dectrees.html">DecTrees</a>
+    <a href="regression.html">Regression</a>
+    <a href="adaboost.html" class="active">AdaBoost</a>
+    <a href="gradientboosting.html">GradientBoosting</a>
+    <a href="xgboost.html">XGBoost</a>
+    <a href="conclusions.html">Conclusions</a>
+    <a href="about.html">About Me</a>
+  </nav>
+</header>
+
+<main>
+<h1>AdaBoost</h1>
+<p class="lede">Can many one-question trees, built one after another, beat a single decision tree at spotting an electronic night?</p>
+
+<h2 id="overview">Overview</h2>
+
+<p>
+  <strong>Boosting</strong> builds a strong model out of many weak ones. Each weak model
+  is only a little better than guessing. <strong>Bagging</strong> (and random forests)
+  grows many deep trees <em>at the same time</em>, each on a random sample of the data,
+  and gives them an equal vote, which averages away the noise of any one tree.
+  Boosting does the opposite. It builds small trees <em>one after another</em>, and
+  each new tree focuses on the rows the earlier ones got wrong (Figure 1). Bagging
+  mainly reduces variance (deep trees that overreact to their sample). Boosting mainly
+  reduces bias (simple trees that are too crude on their own).
+</p>
+
+<figure>
+  <img src="assets/figures/adaboost/concept_bagging_vs_boosting.png" alt="Left: three random samples each grow a deep tree and vote equally. Right: stumps 1 to 4 in a chain, with reweighting between them, ending in a weighted vote">
+  <figcaption><strong>Figure 1. Bagging vs boosting.</strong> Bagging trains independent deep trees in parallel and averages them. AdaBoost trains stumps in sequence, reweights the data after each one, and combines them in a weighted vote.</figcaption>
+</figure>
+
+<p>
+  <strong>AdaBoost</strong> (adaptive boosting) usually uses <strong>decision
+  stumps</strong>: trees with a single question and two leaves, such as &ldquo;does the
+  show start after 8 pm?&rdquo;. A stump alone is a weak learner. AdaBoost keeps a
+  <strong>weight</strong> on every training row, starting equal (1/n each), and repeats
+  these steps for rounds m = 1, 2, &hellip;, M:
+</p>
+
+<ol>
+  <li>Fit a stump h<sub>m</sub> to the <em>weighted</em> rows and compute its
+  <strong>weighted error</strong> &epsilon;<sub>m</sub>, the total weight of the rows it gets wrong.</li>
+  <li>Give the stump a say, <strong>&alpha;<sub>m</sub> = &frac12; ln((1 &minus; &epsilon;<sub>m</sub>) / &epsilon;<sub>m</sub>)</strong>.
+  A stump with a small error gets a large &alpha;. A stump at &epsilon; = 0.5 (a coin flip)
+  gets &alpha; = 0, no say at all (Figure 3).</li>
+  <li><strong>Reweight the rows</strong>: multiply the weight of each missed row by
+  e<sup>&alpha;<sub>m</sub></sup> and each correct row by e<sup>&minus;&alpha;<sub>m</sub></sup>,
+  then rescale so the weights add up to 1. After the update the missed rows carry
+  exactly half of the total weight, so the next stump cannot ignore them.</li>
+</ol>
+
+<p>
+  The final model is a <strong>weighted vote</strong>. With the classes written as +1 and
+  &minus;1, H(x) = sign(&alpha;<sub>1</sub>h<sub>1</sub>(x) + &alpha;<sub>2</sub>h<sub>2</sub>(x)
+  + &hellip; + &alpha;<sub>M</sub>h<sub>M</sub>(x)). Each stump votes for a class, and its
+  vote counts &alpha; times. Figure 2 shows three rounds on made-up points. Each round&rsquo;s
+  misses grow, the next stump cuts in a new direction to get them right, and the
+  weighted vote of three straight cuts makes a boundary with a corner that no single
+  stump could draw. The <strong>learning rate</strong> shrinks every &alpha;, so each
+  stump moves the model a smaller step and more rounds are needed. The number of rounds
+  and the learning rate are the two settings to tune. (Scikit-learn uses the SAMME version,
+  whose weight is ln((1 &minus; &epsilon;) / &epsilon;), exactly 2&alpha;. Every vote is
+  doubled, so no prediction changes.)
+</p>
+
+<figure>
+  <img src="assets/figures/adaboost/concept_rounds.png" alt="Four panels: three stumps on made-up points with dot size showing weight and rings on missed points, then the combined decision region">
+  <figcaption><strong>Figure 2. AdaBoost round by round</strong> on made-up points. Dot size is a point&rsquo;s weight in that round, and a black ring means that round&rsquo;s stump missed it. The last panel is the weighted vote of the three stumps.</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/adaboost/concept_alpha.png" style="max-width:560px; margin:0 auto" alt="Curve of alpha against the weighted error, large near 0 and reaching zero at 0.5">
+  <figcaption><strong>Figure 3. A stump&rsquo;s say in the vote, &alpha;, against its weighted error &epsilon;.</strong></figcaption>
+</figure>
+
+<h2 id="data">Data Prep</h2>
+
+<p>
+  AdaBoost is supervised, so it needs <strong>labeled data</strong>. It uses the same
+  label and the same 480 labeled events as the
+  <a href="naivebayes.html#data">Naive Bayes</a> and <a href="dectrees.html#data">Decision
+  Trees</a> tabs (240 electronic, 240 not), with only the format of each event: start hour,
+  weekday, number of artists, days between on-sale and the show (&minus;1 = unknown) and
+  month. No genre and no venue are used.
+</p>
+
+<figure>
+  <img src="assets/figures/naivebayes/labeled_sample.png" alt="Ten labeled event rows with name, venue, date, the five format features and the label">
+  <figcaption><strong>Figure 4. The labeled data</strong> (shared with Module 3 and the Regression tab; name, venue and date are kept only to read the results).</figcaption>
+</figure>
+
+<p>
+  Scikit-learn&rsquo;s <code>AdaBoostClassifier</code> only accepts numbers. Start hour,
+  number of artists, lead time and month already are numbers with a meaningful order. The
+  <strong>weekday is a category</strong>, though: it was stored as 0 = Sunday to
+  6 = Saturday, which would tell the model that Saturday is &ldquo;six times&rdquo;
+  Monday and that Saturday and Sunday are far apart. So it was turned into seven 0/1
+  columns with <strong>one-hot encoding</strong> (<code>pd.get_dummies</code>), one
+  column per day (Figures 5 and 6). That leaves 11 numeric columns.
+</p>
+
+<figure>
+  <img src="assets/figures/adaboost/onehot_before.png" style="max-width:560px; margin:0 auto" alt="Six rows with the weekday as a number and as a day name">
+  <figcaption><strong>Figure 5. Before:</strong> the weekday is one column holding a category.</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/adaboost/onehot_after.png" alt="The same six rows with seven day columns of zeros and ones">
+  <figcaption><strong>Figure 6. After one-hot encoding:</strong> each event has a single 1 among day_sun &hellip; day_sat.</figcaption>
+</figure>
+
+<p>
+  The events were split with <code>train_test_split</code> (70/30, stratified, same seed)
+  into a <strong>training set</strong> of 336 events and a <strong>testing set</strong>
+  of 144 events. These are exactly the same events as in the training and testing sets of
+  the Naive Bayes and Decision Trees tabs, so all the models are compared on the same 144
+  shows. The sets are <strong>disjoint</strong>. Testing on training events would reward
+  memorizing, and boosting memorizes easily, because it keeps adding stumps aimed at
+  the training rows it still gets wrong. The settings were chosen with 5-fold cross
+  validation <em>inside the training set</em>, and the testing set was used once, at
+  the end.
+</p>
+
+<figure>
+  <img src="assets/figures/adaboost/train_sample.png" alt="First six rows of the AdaBoost training set">
+  <figcaption><strong>Figure 7. Training set</strong> (first 6 of 336).</figcaption>
+</figure>
+
+<figure>
+  <img src="assets/figures/adaboost/test_sample.png" alt="First six rows of the AdaBoost testing set">
+  <figcaption><strong>Figure 8. Testing set</strong> (first 6 of 144). No event appears in both sets.</figcaption>
+</figure>
+
+<ul>
+  <li>Labeled data: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module3/events_labeled.csv">exports/module3/events_labeled.csv</a></li>
+  <li>Training set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/ada_train.csv">exports/module4/ada_train.csv</a> &middot; Testing set: <a href="https://github.com/victormartinez2709/eventRecommender/blob/main/exports/module4/ada_test.csv">exports/module4/ada_test.csv</a></li>
+</ul>
+
+<h2 id="code">Code</h2>
+
+<ul>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/adaboost.py">adaboost.py</a> &mdash; one-hot encoding, the split, round 1 by hand, the cross-validated tuning, the final model and the comparison with the Module 3 trees</li>
+  <li><a href="https://github.com/victormartinez2709/eventRecommender/blob/main/concept_figures.py">concept_figures.py</a> &mdash; Figures 1&ndash;3</li>
+</ul>
+
+<pre><code>onehot = pd.get_dummies(df["weekday"].map(DAYS), prefix="day").astype(int)
+X = pd.concat([df[["start_hour", "lineup_size", "lead_time_days", "month"]], onehot], axis=1)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3,
+                                                    random_state=42, stratify=y)
+#tuning: validation accuracy after every round, 5 folds, 5 learning rates
+for lr in [0.05, 0.1, 0.25, 0.5, 1.0]:
+    for tr, va in StratifiedKFold(5, shuffle=True, random_state=42).split(X_train, y_train):
+        m = AdaBoostClassifier(estimator=DecisionTreeClassifier(max_depth=1),
+                               n_estimators=400, learning_rate=lr).fit(X_train.iloc[tr], y_train.iloc[tr])
+        scores.append(list(m.staged_score(X_train.iloc[va], y_train.iloc[va])))
+ada = AdaBoostClassifier(estimator=DecisionTreeClassifier(max_depth=1),
+                         n_estimators=99, learning_rate=1.0, random_state=42).fit(X_train, y_train)
+accuracy_score(y_test, ada.predict(X_test))</code></pre>
+
+<h2 id="results">Results</h2>
+
+<h3>The starting point: one stump, and round 1 by hand</h3>
+
+<p>
+  A single stump asks the same question as the root of every Module 3 tree,
+  <code>start_hour &le; 20.01</code> (does the show start after 8 pm?). On its own it gets
+  <strong>0.688</strong> of the test events right. Round 1 of AdaBoost was also computed
+  by hand on the 336 training events. The first stump misses 88 of them, so its weighted
+  error is &epsilon;<sub>1</sub> = 88/336 = 0.262 and its say is
+  &alpha;<sub>1</sub> = &frac12; ln(0.738 / 0.262) = <strong>0.518</strong>. Each missed
+  event&rsquo;s weight goes from 1/336 = 0.00298 to 0.00568, and each correct one drops
+  to 0.00202. The 88 misses now carry <strong>exactly half (0.500) of the total
+  weight</strong>, as the update promises, and these numbers match scikit-learn&rsquo;s.
+</p>
+
+<figure>
+  <img src="assets/figures/adaboost/first_stumps.png" alt="Table of the first eight stumps: question, prediction on each side, weighted error and alpha">
+  <figcaption><strong>Figure 9. The first 8 stumps of the final model.</strong> &ldquo;if yes / if no&rdquo; is what the stump predicts on each side of its question; &alpha; is the lecture&rsquo;s value (scikit-learn stores 2&alpha;).</figcaption>
+</figure>
+
+<p>
+  Figure 9 shows the reweighting at work. Most of the 88 misses from round 1 were
+  electronic shows starting by 8 pm, so after the update electronic events carry most
+  of the weight, and the best second stump simply predicts &ldquo;electronic&rdquo; on
+  both sides (error 0.386). The next rounds keep cutting at 9:45 pm, Sunday and an
+  on-sale window of 88 days, each with a smaller &alpha;, because each new stump has a
+  harder, reweighted problem to solve.
+</p>
+
+<h3>Tuning the number of rounds and the learning rate</h3>
+
+<figure>
+  <img src="assets/figures/adaboost/cv_accuracy_by_rounds.png" alt="Mean 5-fold validation accuracy against the number of rounds for five learning rates; rate 1.0 peaks at 0.765 at 99 rounds">
+  <figcaption><strong>Figure 10. Validation accuracy as rounds are added</strong> (mean over 5 folds of the training set, log scale). The dot marks the chosen setting.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Learning rate</th><th>Best validation accuracy</th><th>At round</th><th>After 400 rounds</th></tr>
+  <tr><td>0.05</td><td>0.735</td><td>1</td><td>0.729</td></tr>
+  <tr><td>0.1</td><td>0.735</td><td>1</td><td>0.711</td></tr>
+  <tr><td>0.25</td><td>0.747</td><td>332</td><td>0.735</td></tr>
+  <tr><td>0.5</td><td>0.753</td><td>281</td><td>0.747</td></tr>
+  <tr><td><strong>1.0</strong></td><td><strong>0.765</strong></td><td><strong>99</strong></td><td>0.726</td></tr>
+</table>
+</div>
+
+<p>
+  Every curve starts at 0.735, the accuracy of the first stump. With small learning
+  rates (0.05 and 0.1) the later stumps are scaled down so much that 400 rounds never
+  beat that one stump. Larger rates move faster: rate 0.5 climbs to 0.753 after about
+  280 rounds, and rate 1.0 reaches the highest value, <strong>0.765 at 99 rounds</strong>,
+  so that setting was chosen. Past that point the curve for rate 1.0 slowly falls (0.726
+  after 400 rounds): the extra stumps chase training events that are hard for a reason,
+  such as early-evening electronic concerts, and start fitting noise. The curves are
+  jagged because one validation event is about 1.5 points of accuracy in a fold of 67, so
+  the exact peak is partly luck. Any setting from about 60 to 120 rounds at rate 1.0 is
+  a fair choice.
+</p>
+
+<h3>The final model on the testing set</h3>
+
+<figure>
+  <img src="assets/figures/adaboost/confusion_matrices.png" alt="Confusion matrices: best decision tree 55, 17, 25, 47 (accuracy 0.71); AdaBoost 48, 24, 13, 59 (accuracy 0.74)">
+  <figcaption><strong>Figure 11. Confusion matrices</strong> on the 144 test events: the best Module 3 tree and AdaBoost. Rows are the true label, columns the prediction.</figcaption>
+</figure>
+
+<p>
+  AdaBoost with 99 stumps at learning rate 1.0 classified <strong>107 of the 144 test
+  events correctly, an accuracy of 0.743</strong> (ROC AUC 0.829). It found 48 of the 72
+  electronic events and 59 of the 72 others. Its training accuracy is 0.780, close to the
+  test accuracy, so 99 stumps do not overfit much. With all 400 rounds training accuracy
+  rises to 0.801 while test accuracy drops to 0.729, the same pattern as the validation
+  curve. More than half of the stumps (52 of 99) ask about the start time, and 25 ask
+  about the on-sale window (Figure 12).
+</p>
+
+<figure>
+  <img src="assets/figures/adaboost/feature_importance.png" style="max-width:560px; margin:0 auto" alt="Feature importance: start_hour 0.53, lead_time_days 0.25, day_sun 0.06, day_fri 0.06, lineup_size 0.04, day_sat 0.04, month 0.03">
+  <figcaption><strong>Figure 12. Which features the stumps rely on</strong> (importance weighted by each stump&rsquo;s say).</figcaption>
+</figure>
+
+<h3>AdaBoost vs the decision trees from Part 3</h3>
+
+<div class="table-wrap">
+<table>
+  <tr><th>Model (same 144 test events)</th><th>Accuracy</th><th>Correct</th></tr>
+  <tr><td>Single stump</td><td>0.688</td><td>99</td></tr>
+  <tr><td>Tree 1: Gini, depth 3</td><td>0.681</td><td>98</td></tr>
+  <tr><td>Tree 2: Entropy, depth 3</td><td>0.688</td><td>99</td></tr>
+  <tr><td>Tree 3: Gini, depth 5 (best tree)</td><td>0.708</td><td>102</td></tr>
+  <tr><td><strong>AdaBoost, 99 stumps</strong></td><td><strong>0.743</strong></td><td><strong>107</strong></td></tr>
+</table>
+</div>
+
+<p>
+  <strong>AdaBoost did best.</strong> It beats the best decision tree by <strong>3.5
+  percentage points (5 more events right)</strong>, the other two trees by 5.6 and 6.3
+  points, and the single stump it is built from by 5.6 points (8 events). The errors are also
+  different (Figure 11). Tree 3 catches more electronic events (55 against 48), but it
+  pays for that with almost twice as many false alarms (25 against 13). AdaBoost is
+  the more cautious model. It is also the best of all the models so far at
+  <em>ranking</em> events (AUC 0.829, against 0.767&ndash;0.806 for the three trees, 0.820
+  for logistic regression and 0.803 for Naive Bayes). Logistic regression still has the
+  highest accuracy (0.771). On 144 test events one event is 0.7 points, so a gap of 5
+  events is a modest improvement: on a different set of 144 shows the order of the
+  closest models could change.
+</p>
+
+<h2 id="conclusions">Conclusions</h2>
+
+<p>
+  Combining many small questions about a listing works better than asking one long
+  chain of them. A single tree tops out around 70% at telling electronic nights from
+  other music, and 99 weighted stumps reach 74% on the same shows, with half as many
+  false alarms. AdaBoost also confirms which facts matter. It came back to the start
+  time again and again and then to how far ahead tickets go on sale, while the weekday,
+  lineup and month mattered much less. For finding shows, a late start is the strongest
+  sign of an electronic night in Colorado, and a short on-sale window is the second.
+  The two together are a better guide than the genre field, which is missing or wrong
+  for more than a quarter of listings. The limit is also clear. About one electronic show
+  in three looks like any other concert (an early start, sold months ahead at a big
+  venue), and questions about the format alone cannot separate those. Catching them will need
+  information about the artists themselves, which is the next step for the recommender.
+</p>
+
+</main>
+
+<footer class="site">
+  <div class="footer-inner">
+    CSCI 5612 Project Website &middot; University of Colorado Boulder &middot;
+    <a href="https://github.com/victormartinez2709/eventRecommender">Source code and data on GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>

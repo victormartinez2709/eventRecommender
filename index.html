@@ -20,9 +20,10 @@
     <a href="pca.html">PCA</a>
     <a href="naivebayes.html">NaiveBayes</a>
     <a href="dectrees.html">DecTrees</a>
-    <a href="svms.html">SVMs</a>
     <a href="regression.html">Regression</a>
-    <a href="nn.html">NN</a>
+    <a href="adaboost.html">AdaBoost</a>
+    <a href="gradientboosting.html">GradientBoosting</a>
+    <a href="xgboost.html">XGBoost</a>
     <a href="conclusions.html">Conclusions</a>
     <a href="about.html">About Me</a>
   </nav>
@@ -128,8 +129,8 @@ before later modules use them for prediction and recommendation.
 <figure>
   <img src="assets/figures/intro_pipeline.png" alt="Diagram: Listings, Clean events, Venue profiles, Clustering and PCA, Recommend shows">
   <figcaption>
-    <strong>Figure 2. From listings to recommendations.</strong> The blue steps are
-    the ones added in this module.
+    <strong>Figure 2. From listings to recommendations.</strong> The blue box is the
+    step added in this module: regression and AdaBoost.
   </figcaption>
 </figure>
 
@@ -143,6 +144,22 @@ it falls on, how many artists are billed and how far ahead tickets go on sale, c
 model tell whether it is an electronic event? The Naive Bayes and Decision Trees tabs
 answer this with labeled data, and both find that late weekend starts and short
 on-sale windows are strong signs of an electronic night.
+</p>
+
+<p>
+Timing is the other half of the discovery problem. A listener can only go to a show
+they hear about before it happens, and the shows that are announced late are the
+easiest to miss. In the collected listings, tickets for electronic events go on sale a
+median of 64 days before the show, against 135 days for other music, so someone who
+checks once a month will miss many electronic nights that were announced and sold
+between two checks. The Regression tab measures what drives this timing: the venue
+matters most, and big touring headliners and large rooms sell months ahead while
+club nights are announced a few weeks out. The same tab and the AdaBoost tab return
+to the electronic-or-not question with two more models, logistic regression and
+boosted decision stumps, and both again point to late starts, weekend nights and short
+on-sale windows. Together these results describe what a good alert for a listener
+should do: flag likely electronic nights from the format of a new listing, and check
+for them every few days rather than every few weeks.
 </p>
 
 <h2>Ten Questions This Project Aims to Answer</h2>
