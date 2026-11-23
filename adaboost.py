@@ -155,14 +155,6 @@ plt.title("Which features the stumps rely on")
 plt.savefig(FIGS + "feature_importance.png", dpi=160, bbox_inches="tight")
 plt.close()
 
-#training and testing accuracy as rounds are added (for the write-up; the choice was made with CV)
-full = AdaBoostClassifier(estimator=stump(), n_estimators=MAX_ROUNDS, learning_rate=best_lr,
-                          random_state=42).fit(X_train, y_train)
-tr_curve = np.array(list(full.staged_score(X_train, y_train)))
-te_curve = np.array(list(full.staged_score(X_test, y_test)))
-print(f"\nwith rate {best_lr}: train accuracy after {MAX_ROUNDS} rounds {tr_curve[-1]:.3f}, "
-      f"test {te_curve[-1]:.3f}")
-
 #comparison with the Module 3 decision trees (same split)
 trees = {"Tree 1: Gini, depth 3": DecisionTreeClassifier(criterion="gini", max_depth=3, random_state=42),
          "Tree 2: Entropy, depth 3": DecisionTreeClassifier(criterion="entropy", max_depth=3, random_state=42),

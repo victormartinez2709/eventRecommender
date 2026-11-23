@@ -252,9 +252,9 @@ accuracy_score(y_test, ada.predict(X_test))</code></pre>
   AdaBoost with 99 stumps at learning rate 1.0 classified <strong>107 of the 144 test
   events correctly, an accuracy of 0.743</strong> (ROC AUC 0.829). It found 48 of the 72
   electronic events and 59 of the 72 others. Its training accuracy is 0.780, close to the
-  test accuracy, so 99 stumps do not overfit much. With all 400 rounds training accuracy
-  rises to 0.801 while test accuracy drops to 0.729, the same pattern as the validation
-  curve. More than half of the stumps (52 of 99) ask about the start time, and 25 ask
+  test accuracy, so 99 stumps do not overfit much. (Letting it run to 400 rounds would
+  have been worse: the validation accuracy for that setting drops to 0.726 in Figure 10.
+  The testing set was only used for the chosen model.) More than half of the stumps (52 of 99) ask about the start time, and 25 ask
   about the on-sale window (Figure 12).
 </p>
 

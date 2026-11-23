@@ -15,7 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
 
 FIGS = "assets/figures/regression/"
 DATA = "exports/module4/"
@@ -73,6 +73,13 @@ table_image(X_train.assign(lead_time_days=y_train)[cols6].head(6).reset_index(),
             f"Training set (first 6 of {len(X_train)}, venue columns not shown)", FIGS + "lr_train_sample.png")
 table_image(X_test.assign(lead_time_days=y_test)[cols6].head(6).reset_index(),
             f"Testing set (first 6 of {len(X_test)}, venue columns not shown)", FIGS + "lr_test_sample.png")
+
+#choosing the features with 5-fold cross validation on the training set only (the testing set is not used)
+folds = KFold(5, shuffle=True, random_state=42)
+candidates = {"format only": NUMERIC[:4], "+ headliner and date": NUMERIC, "+ venue": list(X.columns)}
+for name, cols in candidates.items():
+    cv = cross_val_score(LinearRegression(), X_train[cols], y_train, cv=folds, scoring="r2").mean()
+    print(f"CV R2 on the training set, {name:22s} {cv:.3f}")
 
 #the model
 lr = LinearRegression()

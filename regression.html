@@ -131,7 +131,10 @@
 <p>
   The 1,024 events were split with <code>train_test_split</code> into 70% for training
   (716 events) and 30% for testing (308 events), stratified so both sets have the same
-  share of electronic events.
+  share of electronic events. The features were chosen with 5-fold cross validation
+  <em>on the training set only</em>: the format features alone reached a validation
+  R&sup2; of 0.12, adding the headliner and the date 0.17, and adding the venue 0.46, so all
+  of them were kept. The testing set was not used until the final model was fixed.
 </p>
 
 <figure>
